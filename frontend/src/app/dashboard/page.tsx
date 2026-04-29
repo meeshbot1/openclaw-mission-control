@@ -24,17 +24,24 @@ import { Markdown } from "@/components/atoms/Markdown";
 import { SignedOutPanel } from "@/components/auth/SignedOutPanel";
 import { ApiError } from "@/api/mutator";
 import {
+  type listGatewaysApiV1GatewaysGetResponse,
+  useListGatewaysApiV1GatewaysGet,
+} from "@/api/generated/gateways/gateways";
+import {
   type dashboardMetricsApiV1MetricsDashboardGetResponse,
   useDashboardMetricsApiV1MetricsDashboardGet,
 } from "@/api/generated/metrics/metrics";
 import {
   gatewaysStatusApiV1GatewaysStatusGet,
 } from "@/api/generated/gateways/gateways";
-import type { GatewaysStatusResponse } from "@/api/generated/model/gatewaysStatusResponse";
 import {
+  type GatewayRead,
+  type GatewaysStatusResponse,
   type listAgentsApiV1AgentsGetResponse,
+  type ActivityEventRead,
   useListAgentsApiV1AgentsGet,
-} from "@/api/generated/agents/agents";
+} from "@/api/generated/model";
+import { useListAgentsApiV1AgentsGet } from "@/api/generated/agents/agents";
 import {
   type listBoardsApiV1BoardsGetResponse,
   useListBoardsApiV1BoardsGet,
@@ -43,7 +50,6 @@ import {
   type listActivityApiV1ActivityGetResponse,
   useListActivityApiV1ActivityGet,
 } from "@/api/generated/activity/activity";
-import type { ActivityEventRead } from "@/api/generated/model";
 import {
   formatRelativeTimestamp,
   formatTimestamp,
@@ -67,8 +73,11 @@ type SummaryRow = {
 
 type GatewayTarget = {
   gatewayId: string;
-  boardId: string;
-  boardName: string;
+  gatewayName: string;
+  gatewayUrl: string;
+  workspaceRoot: string;
+  boardId: string | null;
+  boardName: string | null;
 };
 
 type GatewaySnapshot = GatewayTarget & {
@@ -490,6 +499,17 @@ export default function DashboardPage() {
     },
   );
 
+  const gatewaysQuery = useListGatewaysApiV1GatewaysGet<
+    listGatewaysApiV1GatewaysGetResponse,
+    ApiError
+  >(undefined, {
+    query: {
+      enabled: Boolean(isSignedIn),
+      refetchInterval: 30_000,
+      refetchOnMount: "always",
+    },
+  });
+
   const agentsQuery = useListAgentsApiV1AgentsGet<listAgentsApiV1AgentsGetResponse, ApiError>(
     { limit: 200 },
     {
@@ -546,6 +566,14 @@ export default function DashboardPage() {
     [agentsQuery.data],
   );
 
+  const gateways = useMemo(
+    () =>
+      gatewaysQuery.data?.status === 200
+        ? [...(gatewaysQuery.data.data.items ?? [])].sort((a, b) => a.name.localeCompare(b.name))
+        : [],
+    [gatewaysQuery.data],
+  );
+
   const metrics = metricsQuery.data?.status === 200 ? metricsQuery.data.data : null;
 
   const onlineAgents = useMemo(
@@ -553,26 +581,32 @@ export default function DashboardPage() {
     [agents],
   );
   const gatewayTargets = useMemo<GatewayTarget[]>(() => {
-    const byGateway = new Map<string, GatewayTarget>();
+    const boardByGatewayId = new Map<string, { boardId: string; boardName: string }>();
     for (const board of boards) {
       const gatewayId = board.gateway_id;
-      if (!gatewayId) continue;
-      if (byGateway.has(gatewayId)) continue;
-      byGateway.set(gatewayId, {
-        gatewayId,
-        boardId: board.id,
-        boardName: board.name,
-      });
+      if (!gatewayId || boardByGatewayId.has(gatewayId)) continue;
+      boardByGatewayId.set(gatewayId, { boardId: board.id, boardName: board.name });
     }
-    return [...byGateway.values()].sort((a, b) => a.boardName.localeCompare(b.boardName));
-  }, [boards]);
+
+    return gateways.map((gateway: GatewayRead) => {
+      const linkedBoard = boardByGatewayId.get(gateway.id);
+      return {
+        gatewayId: gateway.id,
+        gatewayName: gateway.name,
+        gatewayUrl: gateway.url,
+        workspaceRoot: gateway.workspace_root,
+        boardId: linkedBoard?.boardId ?? null,
+        boardName: linkedBoard?.boardName ?? null,
+      };
+    });
+  }, [boards, gateways]);
   const hasConfiguredGateways = gatewayTargets.length > 0;
 
   const gatewayStatusesQuery = useQuery<GatewaySnapshot[], ApiError>({
     queryKey: [
       "dashboard",
       "gateway-statuses",
-      gatewayTargets.map((target) => `${target.gatewayId}:${target.boardId}`),
+      gatewayTargets.map((target) => `${target.gatewayId}:${target.boardId ?? "unassigned"}`),
     ],
     enabled: Boolean(isSignedIn && hasConfiguredGateways),
     refetchInterval: 15_000,
@@ -582,14 +616,14 @@ export default function DashboardPage() {
         gatewayTargets.map(async (target): Promise<GatewaySnapshot> => {
           try {
             const response = await gatewaysStatusApiV1GatewaysStatusGet(
-              { board_id: target.boardId },
+              target.boardId ? { board_id: target.boardId } : undefined,
               { signal },
             );
             if (response.status !== 200) {
               return {
                 ...target,
                 connected: false,
-                gatewayUrl: null,
+                gatewayUrl: target.gatewayUrl,
                 sessionsCount: 0,
                 sessions: [],
                 mainSession: null,
@@ -602,7 +636,7 @@ export default function DashboardPage() {
             return {
               ...target,
               connected: Boolean(payload.connected),
-              gatewayUrl: payload.gateway_url ?? null,
+              gatewayUrl: payload.gateway_url ?? target.gatewayUrl,
               sessionsCount: Number(payload.sessions_count ?? 0),
               sessions: Array.isArray(payload.sessions) ? payload.sessions : [],
               mainSession: payload.main_session ?? null,
@@ -615,7 +649,7 @@ export default function DashboardPage() {
             return {
               ...target,
               connected: false,
-              gatewayUrl: null,
+              gatewayUrl: target.gatewayUrl,
               sessionsCount: 0,
               sessions: [],
               mainSession: null,
@@ -638,7 +672,8 @@ export default function DashboardPage() {
     () =>
       gatewaySnapshots.flatMap((snapshot) => {
         if (snapshot.requestError) return [];
-        const sourceLabel = snapshot.gatewayUrl || snapshot.boardName;
+        const sourceLabel =
+          snapshot.gatewayName || snapshot.gatewayUrl || snapshot.boardName || "Gateway";
         return toSessionSummaries(snapshot.sessions, snapshot.mainSession).map((session) => ({
           ...session,
           key: `${snapshot.gatewayId}:${session.key}`,
@@ -800,7 +835,7 @@ export default function DashboardPage() {
 
   const gatewayRows: SummaryRow[] = [
     { label: "Gateway status", value: gatewayStatusLabel, tone: gatewayStatusTone },
-    { label: "Configured gateways", value: formatCount(gatewayTargets.length) },
+    { label: "Configured gateways", value: formatCount(gateways.length) },
     {
       label: "Connected gateways",
       value: formatCount(gatewayConnectedCount),
@@ -1026,7 +1061,7 @@ export default function DashboardPage() {
                 <div className="max-h-[310px] space-y-2 overflow-x-hidden overflow-y-auto pr-1">
                   {!hasConfiguredGateways ? (
                     <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-500">
-                      No gateways are configured for any board yet.
+                      No gateways are configured yet.
                     </div>
                   ) : gatewayStatusesQuery.isLoading ? (
                     <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-500">
@@ -1039,6 +1074,13 @@ export default function DashboardPage() {
                           {formatCount(gatewayUnavailableCount)} gateway
                           {gatewayUnavailableCount === 1 ? "" : "s"} unavailable; showing sessions
                           from reachable gateways.
+                        </div>
+                      ) : null}
+                      {gatewayTargets.some((target) => !target.boardId) ? (
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+                          {formatCount(gatewayTargets.filter((target) => !target.boardId).length)} configured gateway
+                          {gatewayTargets.filter((target) => !target.boardId).length === 1 ? " is" : "s are"} not linked to a board yet.
+                          Session visibility may be limited until a board is assigned.
                         </div>
                       ) : null}
                       {sessionSummaries.map((session) => (
