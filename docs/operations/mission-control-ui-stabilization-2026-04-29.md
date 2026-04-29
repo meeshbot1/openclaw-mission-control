@@ -2,7 +2,7 @@
 
 ## Final readiness verdict
 - In progress.
-- Current status: partially functional.
+- Current status: targeted stabilization checks are green for the currently configured surfaces; board-scoped live verification remains blocked because no boards exist in this environment.
 
 ## Scope
 Stabilize and harden Mission Control so each implemented UI surface accurately reflects runtime/config state, distinguishes empty state vs failure vs unavailable host tooling, and refreshes without misleading summaries.
@@ -251,6 +251,11 @@ Stabilize and harden Mission Control so each implemented UI surface accurately r
 - Added `frontend/src/app/agents/page.empty-state.test.tsx`
   - Covers corrected global empty-state copy.
 
+### Follow-up audit / documentation
+- Reviewed `activity`, `boards`, `gateways`, `tags`, `organization`, and `skills/marketplace` surfaces for misleading empty/error-state copy and polling/error fallback behavior.
+- No additional misleading empty/error states were found in those audited surfaces beyond the issues already fixed above.
+- Updated this tracker with broader verification evidence and the remaining true blocker: no boards exist for board-scoped live verification.
+
 ## Task checklist
 - [x] Create/update stabilization tracker doc
 - [x] Re-run baseline health/runtime/API probes
@@ -259,12 +264,11 @@ Stabilize and harden Mission Control so each implemented UI surface accurately r
 - [x] Finish endpoint mapping for implemented UI pages at route/import level
 - [ ] Verify board task/approval endpoints for any configured board [blocked: no boards exist]
 - [x] Tighten dashboard regression test until passing
-- [ ] Audit additional misleading empty/error states across remaining pages
-- [~] Audit additional misleading empty/error states across remaining pages
+- [x] Audit additional misleading empty/error states across remaining pages
 - [x] Add focused test coverage for gateway detail / cron pages
-- [ ] Run broader targeted frontend/backend checks
+- [x] Run broader targeted frontend/backend checks
 - [ ] Decide and, if warranted, implement bounded Mission Control heartbeat/cron
-- [ ] Final readiness pass
+- [x] Final readiness pass
 
 ## Test plan
 ### Targeted
@@ -290,6 +294,16 @@ Stabilize and harden Mission Control so each implemented UI surface accurately r
   - status: passed
 - `npm test -- --run src/app/dashboard/page.test.tsx src/app/gateways/[gatewayId]/page.test.tsx src/app/gateways/[gatewayId]/crons/page.test.tsx src/app/approvals/page.no-boards.test.tsx src/app/agents/page.empty-state.test.tsx`
   - test bodies passed, but command exited non-zero due to global coverage threshold enforcement in focused mode
+- `cd backend && uv run mypy`
+  - status: passed (`Success: no issues found in 151 source files`)
+- `cd backend && uv run pytest tests/test_gateway_version_compat.py tests/test_agent_provisioning_utils.py`
+  - status: passed (`56 passed`)
+- `bash scripts/with_node.sh --cwd frontend npx tsc -p tsconfig.json --noEmit`
+  - status: passed
+- `bash scripts/with_node.sh --cwd frontend npm run lint -- src/app/activity/page.tsx src/app/approvals/page.tsx src/app/agents/page.tsx src/app/dashboard/page.tsx src/app/gateways/[gatewayId]/page.tsx src/app/gateways/[gatewayId]/crons/page.tsx src/app/organization/page.tsx src/app/skills/marketplace/page.tsx src/app/boards/page.tsx src/app/tags/page.tsx src/components/BoardApprovalsPanel.tsx src/components/activity/ActivityFeed.tsx`
+  - status: passed
+- `bash scripts/with_node.sh --cwd frontend npm run build`
+  - status: passed
 
 ## Files changed
 - `frontend/src/app/dashboard/page.tsx`
@@ -307,10 +321,9 @@ Stabilize and harden Mission Control so each implemented UI surface accurately r
 - Route/import inventory is done, but not every page has been manually exercised for runtime behavior.
 - Board/task/approval endpoint verification is blocked because there are currently zero boards configured.
 - Gateway detail / cron pages have focused tests, but still need broader live/manual runtime-path verification.
-- Additional empty/error-state audit is still in progress across remaining pages.
 - Broader CI-parity runs (`make frontend-test`, `make backend-test`, `make check`) still need a deliberate pass after this focused stabilization round.
 - Some host log visibility is limited by journal permissions.
 
 ## Deferred / pending
 - Manual/live verification sweep across remaining implemented pages.
-- Broader test/build sweep after targeted fixes stabilize.
+- CI-parity sweep (`make frontend-test`, `make backend-test`, `make check`) after this focused stabilization round.
