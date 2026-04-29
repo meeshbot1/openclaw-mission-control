@@ -276,6 +276,22 @@ export default function AgentDetailPage() {
                       </div>
                       <div>
                         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-quiet">
+                          Model provider
+                        </p>
+                        <p className="mt-1 text-sm text-muted">
+                          {(agent.model_provider ?? "openai").toUpperCase()}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-quiet">
+                          Model name
+                        </p>
+                        <p className="mt-1 text-sm text-muted">
+                          {agent.model_name?.trim() || "Default"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-quiet">
                           Updated
                         </p>
                         <p className="mt-1 text-sm text-muted">

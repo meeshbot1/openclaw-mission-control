@@ -12,6 +12,7 @@ from sqlmodel import SQLModel
 from sqlmodel._compat import SQLModelConfig
 
 from app.schemas.common import NonEmptyStr
+from app.services.openclaw.constants import DEFAULT_MODEL_PROVIDER, normalize_model_provider
 
 _RUNTIME_TYPE_REFERENCES = (datetime, UUID, NonEmptyStr)
 
@@ -86,6 +87,16 @@ class AgentBase(SQLModel):
         description="Runtime heartbeat behavior overrides for this agent.",
         examples=[{"interval_seconds": 30, "missing_tolerance": 120}],
     )
+    model_provider: str = Field(
+        default=DEFAULT_MODEL_PROVIDER,
+        description="Model provider used by this agent's runtime identity/templates.",
+        examples=["openai", "google", "ollama", "anthropic"],
+    )
+    model_name: str | None = Field(
+        default=None,
+        description="Optional provider-specific model name override.",
+        examples=["gpt-5.4", "gemini-2.5-pro", "llama3.3:70b"],
+    )
     identity_profile: dict[str, Any] | None = Field(
         default=None,
         description="Optional profile hints used by routing and policy checks.",
@@ -111,6 +122,23 @@ class AgentBase(SQLModel):
         if isinstance(value, str):
             value = value.strip()
             return value or None
+        return value
+
+    @field_validator("model_provider", mode="before")
+    @classmethod
+    def normalize_model_provider_value(cls, value: object) -> str:
+        if value is None:
+            return DEFAULT_MODEL_PROVIDER
+        return normalize_model_provider(str(value))
+
+    @field_validator("model_name", mode="before")
+    @classmethod
+    def normalize_model_name(cls, value: object) -> object | None:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            normalized = value.strip()
+            return normalized or None
         return value
 
     @field_validator("identity_profile", mode="before")
@@ -175,6 +203,16 @@ class AgentUpdate(SQLModel):
         description="Optional heartbeat policy override.",
         examples=[{"interval_seconds": 45}],
     )
+    model_provider: str | None = Field(
+        default=None,
+        description="Optional provider override (openai/google/ollama/anthropic).",
+        examples=["openai", "google", "ollama", "anthropic"],
+    )
+    model_name: str | None = Field(
+        default=None,
+        description="Optional replacement model name.",
+        examples=["gpt-5.4", "gemini-2.5-pro", "llama3.3:70b"],
+    )
     identity_profile: dict[str, Any] | None = Field(
         default=None,
         description="Optional identity profile update values.",
@@ -200,6 +238,25 @@ class AgentUpdate(SQLModel):
         if isinstance(value, str):
             value = value.strip()
             return value or None
+        return value
+
+    @field_validator("model_provider", mode="before")
+    @classmethod
+    def normalize_optional_model_provider_value(cls, value: object) -> object | None:
+        if value is None:
+            return None
+        if isinstance(value, str) and not value.strip():
+            return None
+        return normalize_model_provider(str(value))
+
+    @field_validator("model_name", mode="before")
+    @classmethod
+    def normalize_optional_model_name(cls, value: object) -> object | None:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            normalized = value.strip()
+            return normalized or None
         return value
 
     @field_validator("identity_profile", mode="before")

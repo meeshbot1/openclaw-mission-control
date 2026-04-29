@@ -29,6 +29,7 @@ from app.services.openclaw.constants import (
     DEFAULT_GATEWAY_FILES,
     DEFAULT_HEARTBEAT_CONFIG,
     DEFAULT_IDENTITY_PROFILE,
+    DEFAULT_MODEL_PROVIDER,
     EXTRA_IDENTITY_PROFILE_FIELDS,
     HEARTBEAT_AGENT_TEMPLATE,
     HEARTBEAT_LEAD_TEMPLATE,
@@ -37,6 +38,8 @@ from app.services.openclaw.constants import (
     LEAD_TEMPLATE_MAP,
     MAIN_TEMPLATE_MAP,
     PRESERVE_AGENT_EDITABLE_FILES,
+    normalize_model_provider,
+    with_provider_templates,
 )
 from app.services.openclaw.gateway_rpc import GatewayConfig as GatewayClientConfig
 from app.services.openclaw.gateway_rpc import (
@@ -180,6 +183,13 @@ def _template_env() -> Environment:
 
 def _heartbeat_template_name(agent: Agent) -> str:
     return HEARTBEAT_LEAD_TEMPLATE if agent.is_board_lead else HEARTBEAT_AGENT_TEMPLATE
+
+
+def _provider(agent: Agent) -> str:
+    raw = getattr(agent, "model_provider", None)
+    if isinstance(raw, str):
+        return normalize_model_provider(raw)
+    return DEFAULT_MODEL_PROVIDER
 
 
 def _workspace_path(agent: Agent, workspace_root: str) -> str:
@@ -400,6 +410,8 @@ def _build_context(
         "auth_token": auth_token,
         "main_session_key": main_session_key,
         "workspace_root": workspace_root,
+        "model_provider": _provider(agent),
+        "model_name": (getattr(agent, "model_name", None) or "").strip(),
         **user_context,
         **identity_context,
     }
@@ -423,6 +435,8 @@ def _build_main_context(
         "auth_token": auth_token,
         "main_session_key": GatewayAgentIdentity.session_key(gateway),
         "workspace_root": gateway.workspace_root or "",
+        "model_provider": _provider(agent),
+        "model_name": (getattr(agent, "model_name", None) or "").strip(),
         **user_context,
         **identity_context,
     }
@@ -995,9 +1009,9 @@ class BoardAgentLifecycleManager(BaseAgentLifecycleManager):
         return context
 
     def _template_overrides(self, agent: Agent) -> dict[str, str] | None:
-        overrides = dict(BOARD_SHARED_TEMPLATE_MAP)
+        overrides = with_provider_templates(BOARD_SHARED_TEMPLATE_MAP, provider=_provider(agent))
         if agent.is_board_lead:
-            overrides.update(LEAD_TEMPLATE_MAP)
+            overrides.update(with_provider_templates(LEAD_TEMPLATE_MAP, provider=_provider(agent)))
         return overrides
 
     def _file_names(self, agent: Agent) -> set[str]:
@@ -1044,8 +1058,7 @@ class GatewayMainAgentLifecycleManager(BaseAgentLifecycleManager):
         return _build_main_context(agent, self._gateway, auth_token, user)
 
     def _template_overrides(self, agent: Agent) -> dict[str, str] | None:
-        _ = agent
-        return MAIN_TEMPLATE_MAP
+        return with_provider_templates(MAIN_TEMPLATE_MAP, provider=_provider(agent))
 
     def _preserve_files(self, agent: Agent) -> set[str]:
         _ = agent

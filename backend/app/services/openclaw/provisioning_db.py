@@ -48,6 +48,7 @@ from app.schemas.gateways import GatewayTemplatesSyncError, GatewayTemplatesSync
 from app.services.activity_log import record_activity
 from app.services.openclaw.constants import (
     _TOOLS_KV_RE,
+    DEFAULT_MODEL_PROVIDER,
     DEFAULT_HEARTBEAT_CONFIG,
     OFFLINE_AFTER,
 )
@@ -1250,6 +1251,10 @@ class AgentLifecycleService(OpenClawDBService):
                     detail="Board gateway_id is required",
                 )
             updates["gateway_id"] = board.gateway_id
+        if "model_provider" in updates and not updates["model_provider"]:
+            updates["model_provider"] = DEFAULT_MODEL_PROVIDER
+        if "model_name" in updates and isinstance(updates["model_name"], str):
+            updates["model_name"] = updates["model_name"].strip() or None
         for key, value in updates.items():
             setattr(agent, key, value)
 

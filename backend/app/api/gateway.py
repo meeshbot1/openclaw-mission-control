@@ -11,7 +11,9 @@ from app.core.auth import AuthContext, get_auth_context
 from app.db.session import get_session
 from app.schemas.common import OkResponse
 from app.schemas.gateway_api import (
+    GatewayCronsResponse,
     GatewayCommandsResponse,
+    GatewayRuntimeOverviewResponse,
     GatewayResolveQuery,
     GatewaySessionHistoryResponse,
     GatewaySessionMessageRequest,
@@ -151,4 +153,36 @@ async def gateway_commands(
         protocol_version=PROTOCOL_VERSION,
         methods=GATEWAY_METHODS,
         events=GATEWAY_EVENTS,
+    )
+
+
+@router.get("/crons", response_model=GatewayCronsResponse)
+async def list_gateway_crons(
+    params: GatewayResolveQuery = RESOLVE_INPUT_DEP,
+    session: AsyncSession = SESSION_DEP,
+    auth: AuthContext = AUTH_DEP,
+    ctx: OrganizationContext = ORG_ADMIN_DEP,
+) -> GatewayCronsResponse:
+    """List cron jobs configured in a resolved gateway."""
+    service = GatewaySessionService(session)
+    return await service.get_crons(
+        params=params,
+        organization_id=ctx.organization.id,
+        user=auth.user,
+    )
+
+
+@router.get("/runtime-overview", response_model=GatewayRuntimeOverviewResponse)
+async def gateway_runtime_overview(
+    params: GatewayResolveQuery = RESOLVE_INPUT_DEP,
+    session: AsyncSession = SESSION_DEP,
+    auth: AuthContext = AUTH_DEP,
+    ctx: OrganizationContext = ORG_ADMIN_DEP,
+) -> GatewayRuntimeOverviewResponse:
+    """Return normalized runtime status and collaboration view for gateway sessions."""
+    service = GatewaySessionService(session)
+    return await service.get_runtime_overview(
+        params=params,
+        organization_id=ctx.organization.id,
+        user=auth.user,
     )

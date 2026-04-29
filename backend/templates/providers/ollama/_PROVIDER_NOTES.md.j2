@@ -1,0 +1,23 @@
+
+## Ollama Runtime Guidance
+
+{% if provider_doc in ["AGENTS", "SOUL"] %}
+- Prioritize deterministic, low-token execution paths and short outputs.
+- Keep instructions literal; avoid expansive speculative reasoning.
+- Prefer one tool/action at a time with explicit success criteria.
+{% elif provider_doc == "BOOTSTRAP" %}
+- Validate local prerequisites early (binary availability, connectivity, env vars).
+- On failure, report the exact command + stderr snippet + next retry action.
+{% elif provider_doc == "TOOLS" %}
+- Prefer locally verifiable commands and explicit flags.
+- Re-run with minimal deltas between attempts to maintain reproducibility.
+{% elif provider_doc == "HEARTBEAT" %}
+- Heartbeat payloads should be compact and deterministic.
+- Avoid verbose narration; include only status, evidence, and next step.
+{% elif provider_doc == "IDENTITY" %}
+- Communication target: practical, short, execution-first.
+{% elif provider_doc == "USER" %}
+- Keep user context concise to limit context bloat.
+{% elif provider_doc == "MEMORY" %}
+- Record only high-signal durable items to preserve local context budget.
+{% endif %}

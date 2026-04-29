@@ -117,6 +117,24 @@ export function AgentsTable({
         cell: ({ row }) => pillCell(row.original.status),
       },
       {
+        accessorKey: "model_provider",
+        header: "Provider",
+        cell: ({ row }) => (
+          <span className="text-sm text-slate-700">
+            {(row.original.model_provider ?? "openai").toUpperCase()}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "model_name",
+        header: "Model",
+        cell: ({ row }) => (
+          <span className="text-sm text-slate-700">
+            {row.original.model_name?.trim() || "Default"}
+          </span>
+        ),
+      },
+      {
         accessorKey: "openclaw_session_id",
         header: "Session",
         cell: ({ row }) => (

@@ -31,6 +31,8 @@ class Agent(QueryModel, table=True):
         default=None,
         sa_column=Column(JSON),
     )
+    model_provider: str = Field(default="openai", index=True)
+    model_name: str | None = Field(default=None, index=True)
     identity_profile: dict[str, Any] | None = Field(
         default=None,
         sa_column=Column(JSON),

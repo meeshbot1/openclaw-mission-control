@@ -168,6 +168,7 @@ Stabilize and harden Mission Control so each implemented UI surface accurately r
 - `GET http://127.0.0.1:8000/healthz` → `{"ok":true}`
 - `GET http://127.0.0.1:8000/readyz` → `{"ok":true}`
 - `HEAD http://127.0.0.1:3000` → `HTTP/1.1 200 OK`
+- Re-verified after targeted fixes: frontend/backend still healthy during focused test sweep
 
 ### Ports / listeners
 - `3000` listening
@@ -204,6 +205,10 @@ Stabilize and harden Mission Control so each implemented UI surface accurately r
 - `/api/v1/gateways/status` → status 200, connected true, sessions_count 91
 - `/api/v1/gateways/runtime-overview` → status 200, agents 24, subagents 10, edges 13
 - `/api/v1/gateways/crons` → status 200
+- Re-checked raw response shape after UI fixes:
+  - `/api/v1/boards` → `{"items":[],"total":0,"limit":200,"offset":0}`
+  - `/api/v1/gateways` → one configured gateway still present
+  - `/api/v1/activity` → `{"items":[],"total":0,"limit":200,"offset":0}`
 
 ## Confirmed mismatch / failure findings
 1. **Dashboard configured-gateway bug confirmed**
@@ -274,6 +279,7 @@ Stabilize and harden Mission Control so each implemented UI surface accurately r
 - `make frontend-test`
 - `make backend-test`
 - `make check` if feasible after targeted fixes are stable
+- Note: `npm test -- --run ...` in this frontend currently enforces coverage thresholds and is not suitable for narrow focused sweeps unless coverage gating is disabled.
 
 ## Tests run
 - `npx vitest run src/app/dashboard/page.test.tsx --coverage.enabled=false`
@@ -282,6 +288,8 @@ Stabilize and harden Mission Control so each implemented UI surface accurately r
   - status: passed
 - `npx vitest run src/app/approvals/page.no-boards.test.tsx src/app/agents/page.empty-state.test.tsx src/app/dashboard/page.test.tsx src/app/gateways/[gatewayId]/page.test.tsx src/app/gateways/[gatewayId]/crons/page.test.tsx --coverage.enabled=false`
   - status: passed
+- `npm test -- --run src/app/dashboard/page.test.tsx src/app/gateways/[gatewayId]/page.test.tsx src/app/gateways/[gatewayId]/crons/page.test.tsx src/app/approvals/page.no-boards.test.tsx src/app/agents/page.empty-state.test.tsx`
+  - test bodies passed, but command exited non-zero due to global coverage threshold enforcement in focused mode
 
 ## Files changed
 - `frontend/src/app/dashboard/page.tsx`
@@ -300,6 +308,7 @@ Stabilize and harden Mission Control so each implemented UI surface accurately r
 - Board/task/approval endpoint verification is blocked because there are currently zero boards configured.
 - Gateway detail / cron pages have focused tests, but still need broader live/manual runtime-path verification.
 - Additional empty/error-state audit is still in progress across remaining pages.
+- Broader CI-parity runs (`make frontend-test`, `make backend-test`, `make check`) still need a deliberate pass after this focused stabilization round.
 - Some host log visibility is limited by journal permissions.
 
 ## Deferred / pending

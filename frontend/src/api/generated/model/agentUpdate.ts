@@ -15,6 +15,10 @@ export interface AgentUpdate {
   board_id?: string | null;
   /** Optional heartbeat policy override. */
   heartbeat_config?: AgentUpdateHeartbeatConfig;
+  /** Optional provider override (openai/google/ollama/anthropic). */
+  model_provider?: string | null;
+  /** Optional replacement model name. */
+  model_name?: string | null;
   /** Optional identity profile update values. */
   identity_profile?: AgentUpdateIdentityProfile;
   /** Optional replacement identity template. */

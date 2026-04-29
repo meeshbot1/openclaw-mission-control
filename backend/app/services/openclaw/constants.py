@@ -38,6 +38,14 @@ DEFAULT_IDENTITY_PROFILE = {
     "emoji": ":gear:",
 }
 
+DEFAULT_MODEL_PROVIDER = "openai"
+SUPPORTED_MODEL_PROVIDERS = (
+    "openai",
+    "google",
+    "ollama",
+    "anthropic",
+)
+
 IDENTITY_PROFILE_FIELDS = {
     "role": "identity_role",
     "communication_style": "identity_communication_style",
@@ -118,6 +126,36 @@ BOARD_SHARED_TEMPLATE_MAP = {
 }
 
 LEAD_TEMPLATE_MAP: dict[str, str] = {}
+
+
+def normalize_model_provider(value: str | None) -> str:
+    """Normalize model-provider values for deterministic template selection."""
+    normalized = (value or "").strip().lower()
+    if normalized in {"gemini", "google-genai"}:
+        return "google"
+    if normalized in {"openai-api", "gpt"}:
+        return "openai"
+    if normalized in {"local", "llama", "llamacpp"}:
+        return "ollama"
+    if normalized in {"claude"}:
+        return "anthropic"
+    if normalized in SUPPORTED_MODEL_PROVIDERS:
+        return normalized
+    return DEFAULT_MODEL_PROVIDER
+
+
+def with_provider_templates(
+    template_map: dict[str, str],
+    *,
+    provider: str | None,
+) -> dict[str, str]:
+    """Resolve template names to provider-specific variants."""
+    provider_key = normalize_model_provider(provider)
+    return {
+        file_name: f"providers/{provider_key}/{template_name}"
+        for file_name, template_name in template_map.items()
+    }
+
 
 _TOOLS_KV_RE = re.compile(r"^(?P<key>[A-Z0-9_]+)=(?P<value>.*)$")
 _NON_TRANSIENT_GATEWAY_ERROR_MARKERS = ("unsupported file",)

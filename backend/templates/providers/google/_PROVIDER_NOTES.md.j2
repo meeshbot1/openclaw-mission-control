@@ -1,0 +1,23 @@
+
+## Google Gemini Runtime Guidance
+
+{% if provider_doc in ["AGENTS", "SOUL"] %}
+- Keep responses crisp up front, then optionally add a short "details" section.
+- When using tools, verify argument names and required fields against schema before calling.
+- Avoid repetitive restatements; one clear summary per turn.
+{% elif provider_doc == "BOOTSTRAP" %}
+- Execute bootstrap sequentially and confirm each prerequisite before the next step.
+- If external calls fail, provide concise diagnostics and move to retry cadence.
+{% elif provider_doc == "TOOLS" %}
+- Use explicit JSON payloads and stable ordering of keys for easier diffing.
+- Re-read OpenAPI after schema errors before retrying calls.
+{% elif provider_doc == "HEARTBEAT" %}
+- Keep heartbeat outputs brief and action-oriented.
+- If blocked, include exactly one blocker and one requested decision.
+{% elif provider_doc == "IDENTITY" %}
+- Communication target: clear, neutral, and unambiguous.
+{% elif provider_doc == "USER" %}
+- Capture explicit user preferences; avoid inferred biography details.
+{% elif provider_doc == "MEMORY" %}
+- Store verified facts with dates; keep assumptions marked as assumptions.
+{% endif %}

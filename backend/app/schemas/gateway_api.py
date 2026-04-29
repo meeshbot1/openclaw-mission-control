@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sqlmodel import SQLModel
+from sqlmodel import Field, SQLModel
 
 from app.schemas.common import NonEmptyStr
 
@@ -54,6 +54,51 @@ class GatewaySessionHistoryResponse(SQLModel):
     """Gateway session history response payload."""
 
     history: list[object]
+
+
+class GatewayCronsResponse(SQLModel):
+    """Gateway cron jobs list response payload."""
+
+    crons: list[object]
+
+
+class GatewayRuntimeEdge(SQLModel):
+    """Directed collaboration edge between agent sessions."""
+
+    from_agent: str
+    to_agent: str
+    relation: str
+    session_key: str | None = None
+
+
+class GatewayRuntimeSessionStatus(SQLModel):
+    """Normalized runtime status for an agent or subagent session."""
+
+    agent_id: str
+    session_key: str
+    status: str
+    raw_status: str | None = None
+    updated_at: int | None = None
+    age_seconds: int | None = None
+    channel: str | None = None
+    model_provider: str | None = None
+    model: str | None = None
+    working_on: str | None = None
+    with_agents: list[str] = Field(default_factory=list)
+    is_subagent: bool = False
+    parent_agent_id: str | None = None
+    parent_session_key: str | None = None
+    label: str | None = None
+
+
+class GatewayRuntimeOverviewResponse(SQLModel):
+    """Gateway runtime overview for status and collaboration dashboards."""
+
+    generated_at_ms: int
+    summary: dict[str, int] = Field(default_factory=dict)
+    agents: list[GatewayRuntimeSessionStatus] = Field(default_factory=list)
+    subagents: list[GatewayRuntimeSessionStatus] = Field(default_factory=list)
+    edges: list[GatewayRuntimeEdge] = Field(default_factory=list)
 
 
 class GatewayCommandsResponse(SQLModel):

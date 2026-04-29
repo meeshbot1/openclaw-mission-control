@@ -15,6 +15,10 @@ export interface AgentCreate {
   board_id?: string | null;
   /** Runtime heartbeat behavior overrides for this agent. */
   heartbeat_config?: AgentCreateHeartbeatConfig;
+  /** Model provider used by this agent's runtime identity/templates. */
+  model_provider?: string;
+  /** Optional provider-specific model name override. */
+  model_name?: string | null;
   /** Optional profile hints used by routing and policy checks. */
   identity_profile?: AgentCreateIdentityProfile;
   /** Template that helps define initial intent and behavior. */

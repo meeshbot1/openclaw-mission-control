@@ -6,13 +6,13 @@ import { useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 
 import { useAuth } from "@/auth/clerk";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AgentsTable } from "@/components/agents/AgentsTable";
 import { DashboardPageLayout } from "@/components/templates/DashboardPageLayout";
 import { Button } from "@/components/ui/button";
 import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
 
-import { ApiError } from "@/api/mutator";
+import { ApiError, customFetch } from "@/api/mutator";
 import {
   type listBoardsApiV1BoardsGetResponse,
   useListBoardsApiV1BoardsGet,
@@ -31,6 +31,7 @@ import {
 } from "@/api/generated/agents/agents";
 import { type AgentRead } from "@/api/generated/model";
 import { formatTimestamp } from "@/lib/formatters";
+import { toGatewayCronView } from "@/lib/gateway-crons";
 import { createOptimisticListDeleteMutation } from "@/lib/list-delete";
 import { useOrganizationMembership } from "@/lib/use-organization-membership";
 
@@ -38,6 +39,48 @@ const maskToken = (value?: string | null) => {
   if (!value) return "—";
   if (value.length <= 8) return "••••";
   return `••••${value.slice(-4)}`;
+};
+
+type GatewayRuntimeSessionStatus = {
+  agent_id: string;
+  session_key: string;
+  status: string;
+  raw_status?: string | null;
+  updated_at?: number | null;
+  age_seconds?: number | null;
+  channel?: string | null;
+  model_provider?: string | null;
+  model?: string | null;
+  working_on?: string | null;
+  with_agents: string[];
+  is_subagent: boolean;
+  parent_agent_id?: string | null;
+  parent_session_key?: string | null;
+  label?: string | null;
+};
+
+type GatewayRuntimeEdge = {
+  from_agent: string;
+  to_agent: string;
+  relation: string;
+  session_key?: string | null;
+};
+
+type GatewayRuntimeOverview = {
+  generated_at_ms: number;
+  summary: Record<string, number>;
+  agents: GatewayRuntimeSessionStatus[];
+  subagents: GatewayRuntimeSessionStatus[];
+  edges: GatewayRuntimeEdge[];
+};
+
+const runtimeStatusClass = (status: string | null | undefined) => {
+  const normalized = (status ?? "").toLowerCase();
+  if (normalized === "working") return "bg-amber-100 text-amber-800";
+  if (normalized === "waiting") return "bg-sky-100 text-sky-800";
+  if (normalized === "broken") return "bg-rose-100 text-rose-800";
+  if (normalized === "idle") return "bg-emerald-100 text-emerald-800";
+  return "bg-slate-100 text-slate-700";
 };
 
 export default function GatewayDetailPage() {
@@ -148,11 +191,106 @@ export default function GatewayDetailPage() {
   const status =
     statusQuery.data?.status === 200 ? statusQuery.data.data : null;
   const isConnected = status?.connected ?? false;
-
-  const title = useMemo(
-    () => (gateway?.name ? gateway.name : "Gateway"),
-    [gateway?.name],
+  const cronQuery = useQuery<{ crons: object[] }, ApiError>({
+    queryKey: [
+      "gateway-crons",
+      gatewayId,
+      statusParams.gateway_url,
+      statusParams.gateway_disable_device_pairing,
+      statusParams.gateway_allow_insecure_tls,
+    ],
+    enabled: Boolean(isSignedIn && isAdmin && gateway),
+    refetchInterval: 30_000,
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (statusParams.gateway_url) {
+        params.set("gateway_url", statusParams.gateway_url);
+      }
+      if (statusParams.gateway_token) {
+        params.set("gateway_token", statusParams.gateway_token);
+      }
+      if (typeof statusParams.gateway_disable_device_pairing === "boolean") {
+        params.set(
+          "gateway_disable_device_pairing",
+          String(statusParams.gateway_disable_device_pairing),
+        );
+      }
+      if (typeof statusParams.gateway_allow_insecure_tls === "boolean") {
+        params.set(
+          "gateway_allow_insecure_tls",
+          String(statusParams.gateway_allow_insecure_tls),
+        );
+      }
+      const response = await customFetch<{
+        data: { crons: object[] };
+        status: number;
+        headers: Headers;
+      }>(`/api/v1/gateways/crons?${params.toString()}`, {
+        method: "GET",
+      });
+      return response.data;
+    },
+  });
+  const cronRecords = useMemo(
+    () => (cronQuery.data?.crons ?? []).map((item) => toGatewayCronView(item)),
+    [cronQuery.data?.crons],
   );
+  const runtimeQuery = useQuery<GatewayRuntimeOverview, ApiError>({
+    queryKey: [
+      "gateway-runtime-overview",
+      gatewayId,
+      statusParams.gateway_url,
+      statusParams.gateway_disable_device_pairing,
+      statusParams.gateway_allow_insecure_tls,
+    ],
+    enabled: Boolean(isSignedIn && isAdmin && gateway),
+    refetchInterval: 15_000,
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (statusParams.gateway_url) {
+        params.set("gateway_url", statusParams.gateway_url);
+      }
+      if (statusParams.gateway_token) {
+        params.set("gateway_token", statusParams.gateway_token);
+      }
+      if (typeof statusParams.gateway_disable_device_pairing === "boolean") {
+        params.set(
+          "gateway_disable_device_pairing",
+          String(statusParams.gateway_disable_device_pairing),
+        );
+      }
+      if (typeof statusParams.gateway_allow_insecure_tls === "boolean") {
+        params.set(
+          "gateway_allow_insecure_tls",
+          String(statusParams.gateway_allow_insecure_tls),
+        );
+      }
+      const response = await customFetch<{
+        data: GatewayRuntimeOverview;
+        status: number;
+        headers: Headers;
+      }>(`/api/v1/gateways/runtime-overview?${params.toString()}`, {
+        method: "GET",
+      });
+      return response.data;
+    },
+  });
+  const runtimeAgents = useMemo(
+    () =>
+      [...(runtimeQuery.data?.agents ?? [])].sort(
+        (left, right) => (right.updated_at ?? 0) - (left.updated_at ?? 0),
+      ),
+    [runtimeQuery.data?.agents],
+  );
+  const runtimeSubagents = useMemo(
+    () =>
+      [...(runtimeQuery.data?.subagents ?? [])].sort(
+        (left, right) => (right.updated_at ?? 0) - (left.updated_at ?? 0),
+      ),
+    [runtimeQuery.data?.subagents],
+  );
+
+  const title = gateway?.name ? gateway.name : "Gateway";
   const handleDelete = () => {
     if (!deleteTarget) return;
     deleteMutation.mutate({ agentId: deleteTarget.id });
@@ -283,6 +421,185 @@ export default function GatewayDetailPage() {
             <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
               <div className="flex items-center justify-between">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Runtime map
+                </p>
+                <span className="text-xs text-slate-500">
+                  {runtimeQuery.isLoading
+                    ? "Loading…"
+                    : `${runtimeAgents.length} agents · ${runtimeSubagents.length} subagents`}
+                </span>
+              </div>
+              {runtimeQuery.error ? (
+                <p className="mt-4 text-sm text-rose-600">
+                  {runtimeQuery.error.message}
+                </p>
+              ) : (
+                <>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {Object.entries(runtimeQuery.data?.summary ?? {}).map(
+                      ([key, value]) => (
+                        <span
+                          key={key}
+                          className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700"
+                        >
+                          {key.replaceAll("_", " ")}: {value}
+                        </span>
+                      ),
+                    )}
+                  </div>
+
+                  <div className="mt-4 overflow-x-auto">
+                    <table className="min-w-full text-left text-sm text-slate-700">
+                      <thead className="text-xs uppercase tracking-wide text-slate-500">
+                        <tr>
+                          <th className="px-3 py-2">Agent</th>
+                          <th className="px-3 py-2">Status</th>
+                          <th className="px-3 py-2">Working on</th>
+                          <th className="px-3 py-2">With</th>
+                          <th className="px-3 py-2">Updated</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {runtimeAgents.map((item) => (
+                          <tr
+                            key={item.session_key}
+                            className="border-t border-slate-100"
+                          >
+                            <td className="px-3 py-2 font-medium text-slate-900">
+                              {item.agent_id}
+                            </td>
+                            <td className="px-3 py-2">
+                              <span
+                                className={`rounded-full px-2 py-1 text-xs font-medium ${runtimeStatusClass(
+                                  item.status,
+                                )}`}
+                              >
+                                {item.status}
+                              </span>
+                            </td>
+                            <td className="max-w-[24rem] truncate px-3 py-2 text-slate-700">
+                              {item.working_on ?? item.session_key}
+                            </td>
+                            <td className="px-3 py-2 text-slate-600">
+                              {item.with_agents.length
+                                ? item.with_agents.join(", ")
+                                : "—"}
+                            </td>
+                            <td className="px-3 py-2 text-slate-600">
+                              {item.updated_at
+                                ? formatTimestamp(
+                                    new Date(item.updated_at).toISOString(),
+                                  )
+                                : "—"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="mt-6">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Recent subagents
+                    </p>
+                    {runtimeSubagents.length === 0 ? (
+                      <p className="mt-2 text-sm text-slate-500">
+                        No subagent sessions found.
+                      </p>
+                    ) : (
+                      <div className="mt-2 overflow-x-auto">
+                        <table className="min-w-full text-left text-sm text-slate-700">
+                          <thead className="text-xs uppercase tracking-wide text-slate-500">
+                            <tr>
+                              <th className="px-3 py-2">Subagent</th>
+                              <th className="px-3 py-2">Parent</th>
+                              <th className="px-3 py-2">Status</th>
+                              <th className="px-3 py-2">Task</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {runtimeSubagents.slice(0, 20).map((item) => (
+                              <tr
+                                key={item.session_key}
+                                className="border-t border-slate-100"
+                              >
+                                <td className="px-3 py-2 font-medium text-slate-900">
+                                  {item.agent_id}
+                                </td>
+                                <td className="px-3 py-2 text-slate-600">
+                                  {item.parent_agent_id ?? "—"}
+                                </td>
+                                <td className="px-3 py-2">
+                                  <span
+                                    className={`rounded-full px-2 py-1 text-xs font-medium ${runtimeStatusClass(
+                                      item.status,
+                                    )}`}
+                                  >
+                                    {item.status}
+                                  </span>
+                                </td>
+                                <td className="max-w-[24rem] truncate px-3 py-2 text-slate-700">
+                                  {item.label ?? item.working_on ?? "—"}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mt-6">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Collaboration edges
+                    </p>
+                    {runtimeQuery.data?.edges.length ? (
+                      <div className="mt-2 overflow-x-auto">
+                        <table className="min-w-full text-left text-sm text-slate-700">
+                          <thead className="text-xs uppercase tracking-wide text-slate-500">
+                            <tr>
+                              <th className="px-3 py-2">From</th>
+                              <th className="px-3 py-2">Relation</th>
+                              <th className="px-3 py-2">To</th>
+                              <th className="px-3 py-2">Session</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {runtimeQuery.data.edges.slice(0, 30).map((edge) => (
+                              <tr
+                                key={`${edge.from_agent}:${edge.to_agent}:${edge.relation}:${edge.session_key ?? ""}`}
+                                className="border-t border-slate-100"
+                              >
+                                <td className="px-3 py-2 font-medium text-slate-900">
+                                  {edge.from_agent}
+                                </td>
+                                <td className="px-3 py-2 text-slate-600">
+                                  {edge.relation.replaceAll("_", " ")}
+                                </td>
+                                <td className="px-3 py-2 font-medium text-slate-900">
+                                  {edge.to_agent}
+                                </td>
+                                <td className="max-w-[20rem] truncate px-3 py-2 text-slate-600">
+                                  {edge.session_key ?? "—"}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-sm text-slate-500">
+                        No collaboration edges detected from current sessions.
+                      </p>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Agents
                 </p>
                 {agentsQuery.isLoading ? (
@@ -302,6 +619,86 @@ export default function GatewayDetailPage() {
                   emptyMessage="No agents assigned to this gateway."
                 />
               </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Cron jobs
+                </p>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-slate-500">
+                    {cronQuery.isLoading
+                      ? "Loading…"
+                      : `${cronRecords.length} configured`}
+                  </span>
+                  {gatewayId ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => router.push(`/gateways/${gatewayId}/crons`)}
+                    >
+                      View cron dashboard
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+              {cronQuery.error ? (
+                <p className="mt-4 text-sm text-rose-600">
+                  {cronQuery.error.message}
+                </p>
+              ) : cronRecords.length === 0 ? (
+                <p className="mt-4 text-sm text-slate-500">
+                  No cron jobs reported by this gateway.
+                </p>
+              ) : (
+                <div className="mt-4 overflow-x-auto">
+                  <table className="min-w-full text-left text-sm text-slate-700">
+                    <thead className="text-xs uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th className="px-3 py-2">Name</th>
+                        <th className="px-3 py-2">What it does</th>
+                        <th className="px-3 py-2">Schedule</th>
+                        <th className="px-3 py-2">Enabled</th>
+                        <th className="px-3 py-2">Last run</th>
+                        <th className="px-3 py-2">Model</th>
+                        <th className="px-3 py-2">Target</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {cronRecords.map((cron) => (
+                        <tr key={cron.id} className="border-t border-slate-100">
+                          <td className="px-3 py-2 font-medium text-slate-900">
+                            {cron.name}
+                          </td>
+                          <td className="max-w-[28rem] truncate px-3 py-2 text-slate-600">
+                            {cron.purpose}
+                          </td>
+                          <td className="px-3 py-2 font-mono text-xs text-slate-700">
+                            {cron.timezone
+                              ? `${cron.schedule} (${cron.timezone})`
+                              : cron.schedule}
+                          </td>
+                          <td className="px-3 py-2">{cron.enabledLabel}</td>
+                          <td className="px-3 py-2 text-slate-600">
+                            {cron.lastRunAtMs
+                              ? formatTimestamp(
+                                  new Date(cron.lastRunAtMs).toISOString(),
+                                )
+                              : "—"}
+                          </td>
+                          <td className="px-3 py-2 text-slate-600">
+                            {cron.model ?? "—"}
+                          </td>
+                          <td className="px-3 py-2 text-slate-600">
+                            {cron.target}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
         ) : null}

@@ -31,6 +31,10 @@ export interface AgentRead {
   is_gateway_main?: boolean;
   /** Last heartbeat timestamp. */
   last_seen_at?: string | null;
+  /** Optional provider-specific model name override. */
+  model_name?: string | null;
+  /** Model provider used by this agent's runtime identity/templates. */
+  model_provider?: string;
   /**
    * Human-readable agent display name.
    * @minLength 1

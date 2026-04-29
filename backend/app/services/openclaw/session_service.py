@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from time import time
 from typing import TYPE_CHECKING
 from uuid import UUID
 
@@ -13,6 +14,10 @@ from app.core.logging import TRACE_LEVEL
 from app.models.boards import Board
 from app.models.gateways import Gateway
 from app.schemas.gateway_api import (
+    GatewayCronsResponse,
+    GatewayRuntimeEdge,
+    GatewayRuntimeOverviewResponse,
+    GatewayRuntimeSessionStatus,
     GatewayResolveQuery,
     GatewaySessionHistoryResponse,
     GatewaySessionMessageRequest,
@@ -90,6 +95,136 @@ class GatewaySessionService(OpenClawDBService):
         if isinstance(value, Iterable):
             return list(value)
         return []
+
+    @staticmethod
+    def _extract_agent_id(session_key: str | None) -> str | None:
+        if not session_key:
+            return None
+        parts = session_key.split(":")
+        if len(parts) >= 2 and parts[0] == "agent" and parts[1]:
+            return parts[1]
+        return None
+
+    @staticmethod
+    def _as_int(value: object) -> int | None:
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float):
+            return int(value)
+        if isinstance(value, str):
+            try:
+                return int(float(value))
+            except ValueError:
+                return None
+        return None
+
+    @classmethod
+    def _session_updated_at(cls, session_entry: dict[str, object]) -> int | None:
+        return (
+            cls._as_int(session_entry.get("updatedAt"))
+            or cls._as_int(session_entry.get("endedAt"))
+            or cls._as_int(session_entry.get("startedAt"))
+        )
+
+    @staticmethod
+    def _derive_runtime_status(
+        *,
+        raw_status: str | None,
+        updated_at_ms: int | None,
+        now_ms: int,
+        aborted_last_run: bool,
+    ) -> str:
+        normalized = (raw_status or "").strip().lower()
+        if aborted_last_run or normalized in {"failed", "error"}:
+            return "broken"
+        if normalized in {"running", "active", "streaming", "in_progress"}:
+            return "working"
+        if normalized in {"waiting", "paused", "needs_approval", "needs_input", "queued"}:
+            return "waiting"
+        if updated_at_ms is None:
+            return "unknown"
+        age_seconds = max(0, int((now_ms - updated_at_ms) / 1000))
+        if age_seconds <= 120:
+            return "working"
+        return "idle"
+
+    def _build_runtime_row(
+        self,
+        *,
+        session_entry: dict[str, object],
+        now_ms: int,
+        with_agents: list[str],
+    ) -> GatewayRuntimeSessionStatus | None:
+        session_key_raw = session_entry.get("key")
+        session_key = session_key_raw if isinstance(session_key_raw, str) else None
+        agent_id = self._extract_agent_id(session_key)
+        if not session_key or not agent_id:
+            return None
+
+        updated_at = self._session_updated_at(session_entry)
+        age_seconds = (
+            max(0, int((now_ms - updated_at) / 1000)) if updated_at is not None else None
+        )
+        raw_status_value = session_entry.get("status")
+        raw_status = raw_status_value if isinstance(raw_status_value, str) else None
+        aborted_last_run = bool(session_entry.get("abortedLastRun"))
+
+        parent_key: str | None = None
+        parent_key_value = session_entry.get("parentSessionKey")
+        if isinstance(parent_key_value, str):
+            parent_key = parent_key_value
+        spawned_by_value = session_entry.get("spawnedBy")
+        if parent_key is None and isinstance(spawned_by_value, str):
+            parent_key = spawned_by_value
+        parent_agent_id = self._extract_agent_id(parent_key)
+
+        label_value = session_entry.get("label")
+        label = label_value if isinstance(label_value, str) else None
+        origin = session_entry.get("origin")
+        origin_label = (
+            origin.get("label")
+            if isinstance(origin, dict) and isinstance(origin.get("label"), str)
+            else None
+        )
+        subject_value = session_entry.get("subject")
+        subject = subject_value if isinstance(subject_value, str) else None
+
+        working_on = label or origin_label or subject or session_key
+        status = self._derive_runtime_status(
+            raw_status=raw_status,
+            updated_at_ms=updated_at,
+            now_ms=now_ms,
+            aborted_last_run=aborted_last_run,
+        )
+
+        channel_value = session_entry.get("channel")
+        channel = channel_value if isinstance(channel_value, str) else None
+        model_provider_value = session_entry.get("modelProvider")
+        model_provider = (
+            model_provider_value if isinstance(model_provider_value, str) else None
+        )
+        model_value = session_entry.get("model")
+        model = model_value if isinstance(model_value, str) else None
+
+        return GatewayRuntimeSessionStatus(
+            agent_id=agent_id,
+            session_key=session_key,
+            status=status,
+            raw_status=raw_status,
+            updated_at=updated_at,
+            age_seconds=age_seconds,
+            channel=channel,
+            model_provider=model_provider,
+            model=model,
+            working_on=working_on,
+            with_agents=with_agents,
+            is_subagent=":subagent:" in session_key,
+            parent_agent_id=parent_agent_id,
+            parent_session_key=parent_key,
+            label=label,
+        )
 
     async def resolve_gateway(
         self,
@@ -306,6 +441,185 @@ class GatewaySessionService(OpenClawDBService):
             except OpenClawGatewayError:
                 main_session_entry = None
         return GatewaySessionsResponse(sessions=sessions_list, main_session=main_session_entry)
+
+    async def get_crons(
+        self,
+        *,
+        params: GatewayResolveQuery,
+        organization_id: UUID,
+        user: User | None,
+    ) -> GatewayCronsResponse:
+        board, config, _main_session = await self.resolve_gateway(
+            params,
+            user=user,
+            organization_id=organization_id,
+        )
+        self._require_same_org(board, organization_id)
+        try:
+            payload = await openclaw_call("cron.list", config=config)
+        except OpenClawGatewayError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=str(exc),
+            ) from exc
+
+        if isinstance(payload, dict):
+            for key in ("crons", "jobs", "entries", "items", "list"):
+                values = payload.get(key)
+                normalized = self.as_object_list(values)
+                if normalized:
+                    return GatewayCronsResponse(crons=normalized)
+            return GatewayCronsResponse(crons=[])
+        return GatewayCronsResponse(crons=self.as_object_list(payload))
+
+    async def get_runtime_overview(
+        self,
+        *,
+        params: GatewayResolveQuery,
+        organization_id: UUID,
+        user: User | None,
+    ) -> GatewayRuntimeOverviewResponse:
+        board, config, _main_session = await self.resolve_gateway(
+            params,
+            user=user,
+            organization_id=organization_id,
+        )
+        self._require_same_org(board, organization_id)
+        try:
+            payload = await openclaw_call("sessions.list", config=config)
+        except OpenClawGatewayError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=str(exc),
+            ) from exc
+
+        if isinstance(payload, dict):
+            sessions_list = [
+                item
+                for item in self.as_object_list(payload.get("sessions"))
+                if isinstance(item, dict)
+            ]
+        else:
+            sessions_list = [item for item in self.as_object_list(payload) if isinstance(item, dict)]
+
+        latest_sessions_by_agent: dict[str, dict[str, object]] = {}
+        latest_subagent_sessions: dict[str, dict[str, object]] = {}
+        edge_keys: set[tuple[str, str, str, str]] = set()
+        edges: list[GatewayRuntimeEdge] = []
+        collaborators: dict[str, set[str]] = {}
+
+        def add_edge(
+            from_agent: str | None,
+            to_agent: str | None,
+            *,
+            relation: str,
+            session_key: str | None,
+        ) -> None:
+            if not from_agent or not to_agent or from_agent == to_agent:
+                return
+            key = (from_agent, to_agent, relation, session_key or "")
+            if key in edge_keys:
+                return
+            edge_keys.add(key)
+            edges.append(
+                GatewayRuntimeEdge(
+                    from_agent=from_agent,
+                    to_agent=to_agent,
+                    relation=relation,
+                    session_key=session_key,
+                )
+            )
+            collaborators.setdefault(from_agent, set()).add(to_agent)
+            collaborators.setdefault(to_agent, set()).add(from_agent)
+
+        for session_entry in sessions_list:
+            session_key_value = session_entry.get("key")
+            session_key = session_key_value if isinstance(session_key_value, str) else None
+            agent_id = self._extract_agent_id(session_key)
+            if session_key is None or agent_id is None:
+                continue
+
+            updated_at = self._session_updated_at(session_entry) or 0
+            is_subagent = ":subagent:" in session_key
+            if is_subagent:
+                previous = latest_subagent_sessions.get(session_key)
+                previous_updated = self._session_updated_at(previous) if previous else None
+                if previous is None or (previous_updated or 0) <= updated_at:
+                    latest_subagent_sessions[session_key] = session_entry
+            else:
+                previous = latest_sessions_by_agent.get(agent_id)
+                previous_updated = self._session_updated_at(previous) if previous else None
+                if previous is None or (previous_updated or 0) <= updated_at:
+                    latest_sessions_by_agent[agent_id] = session_entry
+
+            for child in self.as_object_list(session_entry.get("childSessions")):
+                if not isinstance(child, str):
+                    continue
+                child_agent = self._extract_agent_id(child)
+                add_edge(agent_id, child_agent, relation="delegates_to", session_key=session_key)
+
+            parent_value = session_entry.get("parentSessionKey")
+            if not isinstance(parent_value, str):
+                parent_value = (
+                    session_entry.get("spawnedBy")
+                    if isinstance(session_entry.get("spawnedBy"), str)
+                    else None
+                )
+            if isinstance(parent_value, str):
+                parent_agent = self._extract_agent_id(parent_value)
+                add_edge(parent_agent, agent_id, relation="spawned", session_key=session_key)
+
+        now_ms = int(time() * 1000)
+        agent_rows: list[GatewayRuntimeSessionStatus] = []
+        for session_entry in latest_sessions_by_agent.values():
+            agent_key_value = session_entry.get("key")
+            agent_key = agent_key_value if isinstance(agent_key_value, str) else None
+            agent_id = self._extract_agent_id(agent_key)
+            with_agents = sorted(collaborators.get(agent_id or "", set()))
+            row = self._build_runtime_row(
+                session_entry=session_entry,
+                now_ms=now_ms,
+                with_agents=with_agents,
+            )
+            if row is not None:
+                agent_rows.append(row)
+        agent_rows.sort(key=lambda row: row.updated_at or 0, reverse=True)
+
+        subagent_rows: list[GatewayRuntimeSessionStatus] = []
+        for session_entry in latest_subagent_sessions.values():
+            agent_key_value = session_entry.get("key")
+            agent_key = agent_key_value if isinstance(agent_key_value, str) else None
+            agent_id = self._extract_agent_id(agent_key)
+            with_agents = sorted(collaborators.get(agent_id or "", set()))
+            row = self._build_runtime_row(
+                session_entry=session_entry,
+                now_ms=now_ms,
+                with_agents=with_agents,
+            )
+            if row is not None:
+                subagent_rows.append(row)
+        subagent_rows.sort(key=lambda row: row.updated_at or 0, reverse=True)
+
+        summary = {
+            "agents_total": len(agent_rows),
+            "subagents_total": len(subagent_rows),
+            "edges_total": len(edges),
+            "working": 0,
+            "idle": 0,
+            "waiting": 0,
+            "broken": 0,
+            "unknown": 0,
+        }
+        for row in [*agent_rows, *subagent_rows]:
+            summary[row.status] = summary.get(row.status, 0) + 1
+
+        return GatewayRuntimeOverviewResponse(
+            generated_at_ms=now_ms,
+            summary=summary,
+            agents=agent_rows,
+            subagents=subagent_rows,
+            edges=edges,
+        )
 
     async def get_session(
         self,

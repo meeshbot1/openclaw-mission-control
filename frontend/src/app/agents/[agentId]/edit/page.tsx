@@ -32,6 +32,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { AGENT_EMOJI_OPTIONS } from "@/lib/agent-emoji";
+import {
+  DEFAULT_MODEL_PROVIDER,
+  MODEL_PROVIDER_OPTIONS,
+} from "@/lib/agent-models";
 import { DEFAULT_IDENTITY_PROFILE } from "@/lib/agent-templates";
 
 type IdentityProfile = {
@@ -94,6 +98,10 @@ export default function EditAgentPage() {
   const [heartbeatEvery, setHeartbeatEvery] = useState<string | undefined>(
     undefined,
   );
+  const [modelProvider, setModelProvider] = useState<string | undefined>(
+    undefined,
+  );
+  const [modelName, setModelName] = useState<string | undefined>(undefined);
   const [identityProfile, setIdentityProfile] = useState<
     IdentityProfile | undefined
   >(undefined);
@@ -178,6 +186,9 @@ export default function EditAgentPage() {
   const resolvedIsGatewayMain =
     isGatewayMain ?? Boolean(loadedAgent?.is_gateway_main);
   const resolvedHeartbeatEvery = heartbeatEvery ?? loadedHeartbeat.every;
+  const resolvedModelProvider =
+    modelProvider ?? loadedAgent?.model_provider ?? DEFAULT_MODEL_PROVIDER;
+  const resolvedModelName = modelName ?? loadedAgent?.model_name ?? "";
   const resolvedIdentityProfile = identityProfile ?? loadedIdentityProfile;
 
   const resolvedBoardId = useMemo(() => {
@@ -227,6 +238,8 @@ export default function EditAgentPage() {
             ? existingHeartbeat.includeReasoning
             : false,
       } as unknown as Record<string, unknown>,
+      model_provider: resolvedModelProvider,
+      model_name: resolvedModelName.trim() || null,
       identity_profile: mergeIdentityProfile(
         loadedAgent.identity_profile,
         resolvedIdentityProfile,
@@ -374,6 +387,40 @@ export default function EditAgentPage() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+            </div>
+            <div className="grid gap-6 md:grid-cols-2">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-900">
+                  Model provider
+                </label>
+                <Select
+                  value={resolvedModelProvider}
+                  onValueChange={setModelProvider}
+                  disabled={isLoading}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select model provider" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MODEL_PROVIDER_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-900">
+                  Model name
+                </label>
+                <Input
+                  value={resolvedModelName}
+                  onChange={(event) => setModelName(event.target.value)}
+                  placeholder="Optional, e.g. gpt-5.4"
+                  disabled={isLoading}
+                />
               </div>
             </div>
           </div>

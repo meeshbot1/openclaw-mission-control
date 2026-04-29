@@ -29,6 +29,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { AGENT_EMOJI_OPTIONS } from "@/lib/agent-emoji";
+import {
+  DEFAULT_MODEL_PROVIDER,
+  MODEL_PROVIDER_OPTIONS,
+} from "@/lib/agent-models";
 import { DEFAULT_IDENTITY_PROFILE } from "@/lib/agent-templates";
 
 type IdentityProfile = {
@@ -64,6 +68,8 @@ export default function NewAgentPage() {
   const [name, setName] = useState("");
   const [boardId, setBoardId] = useState<string>("");
   const [heartbeatEvery, setHeartbeatEvery] = useState("10m");
+  const [modelProvider, setModelProvider] = useState(DEFAULT_MODEL_PROVIDER);
+  const [modelName, setModelName] = useState("");
   const [identityProfile, setIdentityProfile] = useState<IdentityProfile>({
     ...DEFAULT_IDENTITY_PROFILE,
   });
@@ -121,6 +127,8 @@ export default function NewAgentPage() {
           target: "last",
           includeReasoning: false,
         },
+        model_provider: modelProvider,
+        model_name: modelName.trim() || null,
         identity_profile: normalizeIdentityProfile(
           identityProfile,
         ) as unknown as Record<string, unknown> | null,
@@ -227,6 +235,40 @@ export default function NewAgentPage() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+            </div>
+            <div className="grid gap-6 md:grid-cols-2">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-900">
+                  Model provider
+                </label>
+                <Select
+                  value={modelProvider}
+                  onValueChange={setModelProvider}
+                  disabled={isLoading}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select model provider" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MODEL_PROVIDER_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-900">
+                  Model name
+                </label>
+                <Input
+                  value={modelName}
+                  onChange={(event) => setModelName(event.target.value)}
+                  placeholder="Optional, e.g. gpt-5.4"
+                  disabled={isLoading}
+                />
               </div>
             </div>
           </div>

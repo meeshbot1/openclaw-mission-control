@@ -365,3 +365,140 @@ async def test_gateway_status_returns_sessions_when_version_compatible(
 
     assert response.connected is True
     assert response.sessions_count == 1
+
+
+@pytest.mark.asyncio
+async def test_gateway_crons_returns_jobs_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _fake_openclaw_call(method: str, params: object = None, *, config: object) -> object:
+        _ = (params, config)
+        assert method == "cron.list"
+        return {"jobs": [{"id": "daily-summary", "cron": "0 8 * * *", "enabled": True}]}
+
+    monkeypatch.setattr(session_service, "openclaw_call", _fake_openclaw_call)
+
+    service = GatewaySessionService(session=object())  # type: ignore[arg-type]
+    response = await service.get_crons(
+        params=GatewayResolveQuery(gateway_url="ws://gateway.example/ws"),
+        organization_id=uuid4(),
+        user=None,
+    )
+
+    assert len(response.crons) == 1
+    assert (response.crons[0] or {}).get("id") == "daily-summary"
+
+
+@pytest.mark.asyncio
+async def test_gateway_crons_returns_list_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _fake_openclaw_call(method: str, params: object = None, *, config: object) -> object:
+        _ = (params, config)
+        assert method == "cron.list"
+        return [{"id": "reminder-check", "schedule": "*/5 * * * *"}]
+
+    monkeypatch.setattr(session_service, "openclaw_call", _fake_openclaw_call)
+
+    service = GatewaySessionService(session=object())  # type: ignore[arg-type]
+    response = await service.get_crons(
+        params=GatewayResolveQuery(gateway_url="ws://gateway.example/ws"),
+        organization_id=uuid4(),
+        user=None,
+    )
+
+    assert len(response.crons) == 1
+    assert (response.crons[0] or {}).get("id") == "reminder-check"
+
+
+@pytest.mark.asyncio
+async def test_gateway_runtime_overview_derives_statuses_and_edges(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now_ms = 1_800_000_000_000
+
+    async def _fake_openclaw_call(method: str, params: object = None, *, config: object) -> object:
+        _ = (params, config)
+        assert method == "sessions.list"
+        return {
+            "sessions": [
+                {
+                    "key": "agent:main:main",
+                    "updatedAt": now_ms - 30_000,
+                    "status": "done",
+                    "channel": "webchat",
+                    "modelProvider": "openai-codex",
+                    "model": "gpt-5.4",
+                    "childSessions": ["agent:reminders:subagent:abc123"],
+                },
+                {
+                    "key": "agent:ops:main",
+                    "updatedAt": now_ms - 20_000,
+                    "status": "failed",
+                    "channel": "telegram",
+                },
+                {
+                    "key": "agent:reminders:subagent:abc123",
+                    "updatedAt": now_ms - 10_000,
+                    "status": "done",
+                    "label": "create-reminder",
+                    "parentSessionKey": "agent:main:main",
+                    "channel": "webchat",
+                },
+            ]
+        }
+
+    monkeypatch.setattr(session_service, "openclaw_call", _fake_openclaw_call)
+    monkeypatch.setattr(session_service, "time", lambda: now_ms / 1000)
+
+    service = GatewaySessionService(session=object())  # type: ignore[arg-type]
+    response = await service.get_runtime_overview(
+        params=GatewayResolveQuery(gateway_url="ws://gateway.example/ws"),
+        organization_id=uuid4(),
+        user=None,
+    )
+
+    assert response.summary["agents_total"] == 2
+    assert response.summary["subagents_total"] == 1
+    assert response.summary["working"] >= 1
+    assert response.summary["broken"] >= 1
+    assert any(edge.from_agent == "main" and edge.to_agent == "reminders" for edge in response.edges)
+
+    agent_by_id = {item.agent_id: item for item in response.agents}
+    assert agent_by_id["main"].status == "working"
+    assert agent_by_id["ops"].status == "broken"
+    assert response.subagents[0].agent_id == "reminders"
+    assert response.subagents[0].parent_agent_id == "main"
+
+
+@pytest.mark.asyncio
+async def test_gateway_runtime_overview_waiting_status_mapping(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now_ms = 1_800_000_000_000
+
+    async def _fake_openclaw_call(method: str, params: object = None, *, config: object) -> object:
+        _ = (params, config)
+        assert method == "sessions.list"
+        return {
+            "sessions": [
+                {
+                    "key": "agent:research:main",
+                    "updatedAt": now_ms - 900_000,
+                    "status": "needs_input",
+                }
+            ]
+        }
+
+    monkeypatch.setattr(session_service, "openclaw_call", _fake_openclaw_call)
+    monkeypatch.setattr(session_service, "time", lambda: now_ms / 1000)
+
+    service = GatewaySessionService(session=object())  # type: ignore[arg-type]
+    response = await service.get_runtime_overview(
+        params=GatewayResolveQuery(gateway_url="ws://gateway.example/ws"),
+        organization_id=uuid4(),
+        user=None,
+    )
+
+    assert len(response.agents) == 1
+    assert response.agents[0].status == "waiting"

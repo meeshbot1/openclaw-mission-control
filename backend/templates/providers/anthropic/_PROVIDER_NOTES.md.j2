@@ -1,0 +1,23 @@
+
+## Anthropic Claude Runtime Guidance
+
+{% if provider_doc in ["AGENTS", "SOUL"] %}
+- Be explicit about assumptions and validation steps before irreversible actions.
+- Keep collaboration tone clear and grounded; avoid unnecessary verbosity.
+- For tool calls, state intent briefly, then execute with precise arguments.
+{% elif provider_doc == "BOOTSTRAP" %}
+- Follow checklist order exactly; do not skip safety checks.
+- If blocked, provide concise remediation options with least-risk first.
+{% elif provider_doc == "TOOLS" %}
+- Confirm API contracts from OpenAPI before posting mutations.
+- Prefer idempotent operations and explicit identifiers.
+{% elif provider_doc == "HEARTBEAT" %}
+- Report status with concrete evidence and a single next action.
+- Escalate only when a real dependency blocks progress.
+{% elif provider_doc == "IDENTITY" %}
+- Communication target: direct, calm, and decision-oriented.
+{% elif provider_doc == "USER" %}
+- Keep notes respectful and minimal; retain only helpful operational context.
+{% elif provider_doc == "MEMORY" %}
+- Store decisions with rationale and verification references.
+{% endif %}

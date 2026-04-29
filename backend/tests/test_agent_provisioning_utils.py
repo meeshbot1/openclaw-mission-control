@@ -10,6 +10,7 @@ import pytest
 
 import app.services.openclaw.internal.agent_key as agent_key_mod
 import app.services.openclaw.provisioning as agent_provisioning
+from app.services.openclaw.constants import normalize_model_provider, with_provider_templates
 from app.services.openclaw.provisioning_db import AgentLifecycleService
 from app.services.openclaw.shared import GatewayAgentIdentity
 from app.services.souls_directory import SoulRef
@@ -76,6 +77,18 @@ def test_templates_root_points_to_repo_templates_dir():
     assert root.name == "templates"
     assert root.parent.name == "backend"
     assert (root / "BOARD_AGENTS.md.j2").exists()
+
+
+def test_normalize_model_provider_aliases():
+    assert normalize_model_provider("gemini") == "google"
+    assert normalize_model_provider("claude") == "anthropic"
+    assert normalize_model_provider("local") == "ollama"
+    assert normalize_model_provider("unknown-provider") == "openai"
+
+
+def test_with_provider_templates_routes_to_provider_directory():
+    mapped = with_provider_templates({"AGENTS.md": "BOARD_AGENTS.md.j2"}, provider="google")
+    assert mapped == {"AGENTS.md": "providers/google/BOARD_AGENTS.md.j2"}
 
 
 def test_user_context_uses_email_fallback_when_name_is_missing():

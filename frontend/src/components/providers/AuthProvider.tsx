@@ -1,7 +1,7 @@
 "use client";
 
 import { ClerkProvider } from "@clerk/nextjs";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useSyncExternalStore, type ReactNode } from "react";
 
 import { isLikelyValidClerkPublishableKey } from "@/auth/clerkKey";
 import {
@@ -11,8 +11,17 @@ import {
 } from "@/auth/localAuth";
 import { LocalAuthLogin } from "@/components/organisms/LocalAuthLogin";
 
+function useHydrated(): boolean {
+  return useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const localMode = isLocalAuthMode();
+  const hasHydrated = useHydrated();
 
   useEffect(() => {
     if (!localMode) {
@@ -21,9 +30,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [localMode]);
 
   if (localMode) {
-    if (!getLocalAuthToken()) {
-      return <LocalAuthLogin />;
+    if (!hasHydrated) {
+      // Keep initial SSR/client markup identical until client-only storage is readable.
+      return (
+        <div
+          data-cy="auth-hydration-gate"
+          className="min-h-screen bg-app"
+          aria-hidden="true"
+        />
+      );
     }
+
+    if (!getLocalAuthToken()) return <LocalAuthLogin />;
+
     return <>{children}</>;
   }
 

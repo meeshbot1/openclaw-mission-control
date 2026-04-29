@@ -15,11 +15,24 @@ node_modules/
 .idea/
 .runlogs/
 
+# OpenClaw local runtime/workspace state
+.omx/
+.openclaw/
+memory/
+BOOTSTRAP.md
+HEARTBEAT.md
+IDENTITY.md
+SOUL.md
+STATUS.md
+TOOLS.md
+USER.md
+
 # Worktrees
 .worktrees/
 
 # Accidental literal "~" directories (e.g. when a configured path contains "~" but isn't expanded)
 backend/~/
+backend/.data/
 backend/coverage.*
 backend/.coverage
 frontend/coverage

@@ -1,0 +1,23 @@
+
+## OpenAI Runtime Guidance
+
+{% if provider_doc in ["AGENTS", "SOUL"] %}
+- Prefer direct execution over long planning text unless blocked.
+- Use structured tool calls when available and keep tool arguments explicit.
+- Keep follow-up messages concise: decision first, evidence second.
+{% elif provider_doc == "BOOTSTRAP" %}
+- Treat bootstrap steps as imperative; do not rewrite them into analysis.
+- If a command fails, retry once with corrected flags, then report the exact error.
+{% elif provider_doc == "TOOLS" %}
+- Favor deterministic command shapes (`curl -fsS`, explicit headers, explicit JSON payloads).
+- When an endpoint is unclear, inspect OpenAPI first instead of guessing payloads.
+{% elif provider_doc == "HEARTBEAT" %}
+- Heartbeats should be short and stateful: `working`, `waiting`, `blocked`, or `done`.
+- Only emit `HEARTBEAT_OK` after successful API check-in + concrete work outcome.
+{% elif provider_doc == "IDENTITY" %}
+- Communication target: concise, operational, and low-fluff by default.
+{% elif provider_doc == "USER" %}
+- Preserve user preferences literally; avoid speculative profile inflation.
+{% elif provider_doc == "MEMORY" %}
+- Persist durable decisions and constraints, not speculative future plans.
+{% endif %}
