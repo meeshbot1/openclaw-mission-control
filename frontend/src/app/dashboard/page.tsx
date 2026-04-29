@@ -37,11 +37,12 @@ import {
 import {
   type GatewayRead,
   type GatewaysStatusResponse,
-  type listAgentsApiV1AgentsGetResponse,
   type ActivityEventRead,
-  useListAgentsApiV1AgentsGet,
 } from "@/api/generated/model";
-import { useListAgentsApiV1AgentsGet } from "@/api/generated/agents/agents";
+import {
+  type listAgentsApiV1AgentsGetResponse,
+  useListAgentsApiV1AgentsGet,
+} from "@/api/generated/agents/agents";
 import {
   type listBoardsApiV1BoardsGetResponse,
   useListBoardsApiV1BoardsGet,
@@ -738,6 +739,9 @@ export default function DashboardPage() {
   const gatewayHealthErrorCount = gatewaySnapshots.filter(
     (snapshot) => Boolean(snapshot.error || snapshot.mainSessionError),
   ).length;
+  const unlinkedGatewayCount = gatewayTargets.filter(
+    (target) => !target.boardId,
+  ).length;
 
   const countedSessions = gatewaySnapshots.reduce(
     (sum, snapshot) => sum + Math.max(0, snapshot.sessionsCount),
@@ -1076,10 +1080,10 @@ export default function DashboardPage() {
                           from reachable gateways.
                         </div>
                       ) : null}
-                      {gatewayTargets.some((target) => !target.boardId) ? (
+                      {unlinkedGatewayCount > 0 ? (
                         <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
-                          {formatCount(gatewayTargets.filter((target) => !target.boardId).length)} configured gateway
-                          {gatewayTargets.filter((target) => !target.boardId).length === 1 ? " is" : "s are"} not linked to a board yet.
+                          {formatCount(unlinkedGatewayCount)} configured gateway
+                          {unlinkedGatewayCount === 1 ? " is" : "s are"} not linked to a board yet.
                           Session visibility may be limited until a board is assigned.
                         </div>
                       ) : null}
@@ -1115,12 +1119,30 @@ export default function DashboardPage() {
                       ))}
                     </>
                   ) : gatewayUnavailableCount === gatewayTargets.length ? (
-                    <div className="rounded-lg border border-rose-300 bg-rose-50 p-3 text-sm text-rose-700">
-                      Session data is unavailable for all configured gateways.
+                    <div className="space-y-2">
+                      {unlinkedGatewayCount > 0 ? (
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+                          {formatCount(unlinkedGatewayCount)} configured gateway
+                          {unlinkedGatewayCount === 1 ? " is" : "s are"} not linked to a board yet.
+                          Session visibility may be limited until a board is assigned.
+                        </div>
+                      ) : null}
+                      <div className="rounded-lg border border-rose-300 bg-rose-50 p-3 text-sm text-rose-700">
+                        Session data is unavailable for all configured gateways.
+                      </div>
                     </div>
                   ) : (
-                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-500">
-                      No active sessions detected.
+                    <div className="space-y-2">
+                      {unlinkedGatewayCount > 0 ? (
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+                          {formatCount(unlinkedGatewayCount)} configured gateway
+                          {unlinkedGatewayCount === 1 ? " is" : "s are"} not linked to a board yet.
+                          Session visibility may be limited until a board is assigned.
+                        </div>
+                      ) : null}
+                      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-500">
+                        No active sessions detected.
+                      </div>
                     </div>
                   )}
                 </div>

@@ -8,28 +8,149 @@
 Stabilize and harden Mission Control so each implemented UI surface accurately reflects runtime/config state, distinguishes empty state vs failure vs unavailable host tooling, and refreshes without misleading summaries.
 
 ## Page / surface inventory
-### Core
+### Public / auth
+- `/`
+  - marketing shell; no Mission Control API imports
+- `/sign-in/[[...rest]]`
+  - sign-in shell
+- `/invite`
+  - organizations API
+- `/onboarding`
+  - users API
+- `/settings`
+  - users API
+
+### Dashboard / activity
 - `/dashboard`
-  - Boards summary: `/api/v1/boards`
-  - DB agents summary: `/api/v1/agents`
-  - KPI/task summary: `/api/v1/metrics/dashboard`
-  - Recent activity: `/api/v1/activity`
-  - Gateway/session summary: currently `/api/v1/gateways/status`; should be grounded by `/api/v1/gateways` for configured gateway count
+  - `/api/v1/boards`
+  - `/api/v1/agents`
+  - `/api/v1/gateways`
+  - `/api/v1/gateways/status`
+  - `/api/v1/metrics/dashboard`
+  - `/api/v1/activity`
 - `/activity`
-  - Activity feed: `/api/v1/activity`
-  - Streaming surfaces also exist for board/task/approval/agent events
-- `/agents`
-  - DB-backed provisioning roster: `/api/v1/agents`
-  - Board labels: `/api/v1/boards`
+  - `/api/v1/activity`
+  - `/api/v1/agents/stream`
+  - `/api/v1/boards`
+  - `/api/v1/boards/{boardId}/snapshot`
+  - `/api/v1/boards/{boardId}/memory/stream`
+  - `/api/v1/boards/{boardId}/approvals/stream`
+  - `/api/v1/boards/{boardId}/tasks/stream`
+  - organizations membership API
+
+### Gateways
 - `/gateways`
-  - Configured gateways: `/api/v1/gateways`
+  - `/api/v1/gateways`
+- `/gateways/new`
+  - `/api/v1/gateways`
 - `/gateways/[gatewayId]`
-  - Gateway config: `/api/v1/gateways/{gatewayId}`
-  - Runtime/session status: `/api/v1/gateways/status`
+  - `/api/v1/gateways/{gatewayId}`
+  - `/api/v1/gateways/status`
+  - `/api/v1/gateways/crons`
+  - `/api/v1/gateways/runtime-overview`
+  - `/api/v1/agents?gateway_id=...`
+  - `/api/v1/boards`
+- `/gateways/[gatewayId]/edit`
+  - `/api/v1/gateways/{gatewayId}`
 - `/gateways/[gatewayId]/crons`
-  - Cron status: `/api/v1/gateways/crons`
-- `/boards`, `/board-groups`, `/approvals`, `/tags`, `/custom-fields`, `/skills/marketplace`, `/skills/packs`, `/settings`
-  - Additional implemented surfaces still need explicit endpoint mapping pass in this doc
+  - `/api/v1/gateways/{gatewayId}`
+  - `/api/v1/gateways/crons`
+
+### Agents
+- `/agents`
+  - `/api/v1/agents`
+  - `/api/v1/boards`
+- `/agents/new`
+  - `/api/v1/agents`
+  - `/api/v1/boards`
+- `/agents/[agentId]`
+  - `/api/v1/agents/{agentId}`
+  - `/api/v1/activity`
+  - `/api/v1/boards`
+- `/agents/[agentId]/edit`
+  - `/api/v1/agents/{agentId}`
+  - `/api/v1/boards`
+
+### Boards / board groups
+- `/boards`
+  - `/api/v1/boards`
+  - `/api/v1/board-groups`
+- `/boards/new`
+  - `/api/v1/boards`
+  - `/api/v1/board-groups`
+  - `/api/v1/gateways`
+- `/boards/[boardId]`
+  - `/api/v1/boards/{boardId}` surfaces
+  - `/api/v1/boards/{boardId}/tasks*`
+  - `/api/v1/boards/{boardId}/approvals*`
+  - `/api/v1/boards/{boardId}/memory*`
+  - `/api/v1/activity`
+  - `/api/v1/agents`
+  - organizations/tags/custom-fields APIs
+- `/boards/[boardId]/edit`
+  - `/api/v1/boards/{boardId}`
+  - `/api/v1/agents`
+  - `/api/v1/board-groups`
+  - `/api/v1/board-webhooks`
+  - `/api/v1/gateways`
+- `/boards/[boardId]/approvals`
+  - board approvals surface (needs direct code read if further issues found)
+- `/boards/[boardId]/webhooks/[webhookId]/payloads`
+  - `/api/v1/board-webhooks`
+- `/board-groups`
+  - `/api/v1/board-groups`
+- `/board-groups/new`
+  - `/api/v1/board-groups`
+  - `/api/v1/boards`
+- `/board-groups/[groupId]`
+  - `/api/v1/board-groups/{groupId}`
+  - `/api/v1/board-group-memory`
+  - organizations API
+- `/board-groups/[groupId]/edit`
+  - `/api/v1/board-groups/{groupId}`
+  - `/api/v1/boards`
+
+### Approvals / organization metadata
+- `/approvals`
+  - `/api/v1/approvals`
+  - `/api/v1/boards`
+- `/organization`
+  - `/api/v1/organizations`
+  - `/api/v1/boards`
+
+### Tags / custom fields
+- `/tags`
+  - `/api/v1/tags`
+- `/tags/add`
+  - `/api/v1/tags`
+- `/tags/[tagId]/edit`
+  - `/api/v1/tags/{tagId}`
+- `/custom-fields`
+  - `/api/v1/org-custom-fields`
+- `/custom-fields/new`
+  - `/api/v1/org-custom-fields`
+  - `/api/v1/boards`
+- `/custom-fields/[fieldId]/edit`
+  - `/api/v1/org-custom-fields/{fieldId}`
+  - `/api/v1/boards`
+
+### Skills
+- `/skills`
+  - minimal/no direct generated API imports in page component
+- `/skills/marketplace`
+  - `/api/v1/skills-marketplace`
+  - `/api/v1/skills`
+  - `/api/v1/gateways`
+- `/skills/marketplace/new`
+  - needs direct code read if issues appear
+- `/skills/marketplace/[skillId]/edit`
+  - needs direct code read if issues appear
+- `/skills/packs`
+  - `/api/v1/skills`
+- `/skills/packs/new`
+  - `/api/v1/skills`
+- `/skills/packs/[packId]/edit`
+  - `/api/v1/skills`
 
 ## API endpoint inventory checked in this pass
 - `GET /api/v1/gateways`
@@ -91,7 +212,9 @@ Stabilize and harden Mission Control so each implemented UI surface accurately r
    - Previous dashboard logic inferred configured gateways only from boards with `gateway_id`.
    - Result: dashboard could claim no gateways were configured when a gateway existed but no board linked it.
 2. Dashboard session summary also depended on board-linked gateway targets, so unassigned configured gateways were invisible there.
-3. Focused frontend test harness for the dashboard branch is not green yet; fix is in code, but test needs additional mocking/timing cleanup.
+3. Dashboard regression coverage is now green for the configured-gateway/no-board case.
+4. Board task/approval endpoint verification is presently blocked by real configuration state: there are zero boards, so board-scoped verification cannot proceed without creating/configuring a board.
+5. Gateway detail and gateway cron pages now have focused page-level tests covering key empty/failing states, but broader runtime-path manual verification is still pending.
 
 ## Changes made in this pass
 ### Code
@@ -105,24 +228,31 @@ Stabilize and harden Mission Control so each implemented UI surface accurately r
 
 ### Tests
 - Added `frontend/src/app/dashboard/page.test.tsx`
-  - Covers intended regression scenario in progress.
-  - Currently failing due to test harness/query timing mismatch; needs follow-up.
+  - Covers configured gateway present + no linked board regression scenario.
+- Added `frontend/src/app/gateways/[gatewayId]/page.test.tsx`
+  - Covers empty runtime-edge, empty agent-list, and empty cron-list states on gateway detail page.
+- Added `frontend/src/app/gateways/[gatewayId]/crons/page.test.tsx`
+  - Covers failing-cron summary and cron job detail rendering.
 
 ## Task checklist
 - [x] Create/update stabilization tracker doc
 - [x] Re-run baseline health/runtime/API probes
 - [x] Confirm dashboard configured-gateway mismatch with live evidence
 - [x] Patch dashboard to use configured gateway roster
-- [ ] Finish endpoint mapping for every implemented UI page
-- [ ] Verify board task/approval endpoints for any configured board
-- [ ] Tighten dashboard regression test until passing
+- [x] Finish endpoint mapping for implemented UI pages at route/import level
+- [ ] Verify board task/approval endpoints for any configured board [blocked: no boards exist]
+- [x] Tighten dashboard regression test until passing
 - [ ] Audit additional misleading empty/error states across remaining pages
+- [x] Add focused test coverage for gateway detail / cron pages
 - [ ] Run broader targeted frontend/backend checks
+- [ ] Decide and, if warranted, implement bounded Mission Control heartbeat/cron
 - [ ] Final readiness pass
 
 ## Test plan
 ### Targeted
 - `npx vitest run src/app/dashboard/page.test.tsx --coverage.enabled=false`
+- `npx vitest run src/app/gateways/[gatewayId]/page.test.tsx --coverage.enabled=false`
+- `npx vitest run src/app/gateways/[gatewayId]/crons/page.test.tsx --coverage.enabled=false`
 - additional targeted tests around dashboard gateway/session summaries if needed
 
 ### Broader
@@ -132,21 +262,23 @@ Stabilize and harden Mission Control so each implemented UI surface accurately r
 
 ## Tests run
 - `npx vitest run src/app/dashboard/page.test.tsx --coverage.enabled=false`
-  - status: failing
-  - reason: test harness does not yet observe the new async notice branch reliably
+  - status: passed
+- `npx vitest run src/app/dashboard/page.test.tsx src/app/gateways/[gatewayId]/page.test.tsx src/app/gateways/[gatewayId]/crons/page.test.tsx --coverage.enabled=false`
+  - status: passed
 
 ## Files changed
 - `frontend/src/app/dashboard/page.tsx`
 - `frontend/src/app/dashboard/page.test.tsx`
+- `frontend/src/app/gateways/[gatewayId]/page.test.tsx`
+- `frontend/src/app/gateways/[gatewayId]/crons/page.test.tsx`
 - `docs/operations/mission-control-ui-stabilization-2026-04-29.md`
 
 ## Remaining risks
-- The new dashboard behavior is patched but not yet backed by a passing focused test.
-- Full inventory/verification of all implemented pages is still incomplete.
-- Board/task/approval endpoint verification is still pending because there are currently zero boards configured.
+- Route/import inventory is done, but not every page has been manually exercised for runtime behavior.
+- Board/task/approval endpoint verification is blocked because there are currently zero boards configured.
+- Gateway detail / cron pages have focused tests, but still need broader live/manual runtime-path verification.
 - Some host log visibility is limited by journal permissions.
 
 ## Deferred / pending
-- Complete full surface-by-surface mapping for remaining implemented pages.
-- Add/repair passing regression coverage for dashboard configured-gateway visibility.
+- Manual/live verification sweep across remaining implemented pages.
 - Broader test/build sweep after targeted fixes stabilize.
