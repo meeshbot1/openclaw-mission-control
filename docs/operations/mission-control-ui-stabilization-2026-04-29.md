@@ -215,6 +215,8 @@ Stabilize and harden Mission Control so each implemented UI surface accurately r
 3. Dashboard regression coverage is now green for the configured-gateway/no-board case.
 4. Board task/approval endpoint verification is presently blocked by real configuration state: there are zero boards, so board-scoped verification cannot proceed without creating/configuring a board.
 5. Gateway detail and gateway cron pages now have focused page-level tests covering key empty/failing states, but broader runtime-path manual verification is still pending.
+6. Global approvals page previously fell through to an "All clear" empty state when zero boards existed, which was misleading; it now distinguishes no-board configuration from an empty approvals queue.
+7. Global agents page empty-state copy previously referenced "this board" even though the page is organization-wide; wording now matches Mission Control scope.
 
 ## Changes made in this pass
 ### Code
@@ -225,6 +227,12 @@ Stabilize and harden Mission Control so each implemented UI surface accurately r
   - Configured gateway count now reflects actual gateway records, not board-linked subset.
   - Sessions panel empty state text changed from board-scoped wording to true configured-gateway wording.
   - Sessions panel now shows a specific notice when configured gateways are not linked to boards.
+- Updated `frontend/src/app/approvals/page.tsx`
+  - Global approvals now shows a configuration-specific empty state when no boards exist.
+- Updated `frontend/src/components/BoardApprovalsPanel.tsx`
+  - Empty state messaging is now configurable so pages can distinguish healthy-empty vs not-configured states.
+- Updated `frontend/src/app/agents/page.tsx`
+  - Global empty-state copy now references Mission Control scope instead of a single board.
 
 ### Tests
 - Added `frontend/src/app/dashboard/page.test.tsx`
@@ -233,6 +241,10 @@ Stabilize and harden Mission Control so each implemented UI surface accurately r
   - Covers empty runtime-edge, empty agent-list, and empty cron-list states on gateway detail page.
 - Added `frontend/src/app/gateways/[gatewayId]/crons/page.test.tsx`
   - Covers failing-cron summary and cron job detail rendering.
+- Added `frontend/src/app/approvals/page.no-boards.test.tsx`
+  - Covers configuration-specific empty state when zero boards exist.
+- Added `frontend/src/app/agents/page.empty-state.test.tsx`
+  - Covers corrected global empty-state copy.
 
 ## Task checklist
 - [x] Create/update stabilization tracker doc
@@ -243,6 +255,7 @@ Stabilize and harden Mission Control so each implemented UI surface accurately r
 - [ ] Verify board task/approval endpoints for any configured board [blocked: no boards exist]
 - [x] Tighten dashboard regression test until passing
 - [ ] Audit additional misleading empty/error states across remaining pages
+- [~] Audit additional misleading empty/error states across remaining pages
 - [x] Add focused test coverage for gateway detail / cron pages
 - [ ] Run broader targeted frontend/backend checks
 - [ ] Decide and, if warranted, implement bounded Mission Control heartbeat/cron
@@ -253,6 +266,8 @@ Stabilize and harden Mission Control so each implemented UI surface accurately r
 - `npx vitest run src/app/dashboard/page.test.tsx --coverage.enabled=false`
 - `npx vitest run src/app/gateways/[gatewayId]/page.test.tsx --coverage.enabled=false`
 - `npx vitest run src/app/gateways/[gatewayId]/crons/page.test.tsx --coverage.enabled=false`
+- `npx vitest run src/app/approvals/page.no-boards.test.tsx --coverage.enabled=false`
+- `npx vitest run src/app/agents/page.empty-state.test.tsx --coverage.enabled=false`
 - additional targeted tests around dashboard gateway/session summaries if needed
 
 ### Broader
@@ -265,18 +280,26 @@ Stabilize and harden Mission Control so each implemented UI surface accurately r
   - status: passed
 - `npx vitest run src/app/dashboard/page.test.tsx src/app/gateways/[gatewayId]/page.test.tsx src/app/gateways/[gatewayId]/crons/page.test.tsx --coverage.enabled=false`
   - status: passed
+- `npx vitest run src/app/approvals/page.no-boards.test.tsx src/app/agents/page.empty-state.test.tsx src/app/dashboard/page.test.tsx src/app/gateways/[gatewayId]/page.test.tsx src/app/gateways/[gatewayId]/crons/page.test.tsx --coverage.enabled=false`
+  - status: passed
 
 ## Files changed
 - `frontend/src/app/dashboard/page.tsx`
 - `frontend/src/app/dashboard/page.test.tsx`
 - `frontend/src/app/gateways/[gatewayId]/page.test.tsx`
 - `frontend/src/app/gateways/[gatewayId]/crons/page.test.tsx`
+- `frontend/src/app/approvals/page.no-boards.test.tsx`
+- `frontend/src/app/agents/page.empty-state.test.tsx`
+- `frontend/src/app/approvals/page.tsx`
+- `frontend/src/components/BoardApprovalsPanel.tsx`
+- `frontend/src/app/agents/page.tsx`
 - `docs/operations/mission-control-ui-stabilization-2026-04-29.md`
 
 ## Remaining risks
 - Route/import inventory is done, but not every page has been manually exercised for runtime behavior.
 - Board/task/approval endpoint verification is blocked because there are currently zero boards configured.
 - Gateway detail / cron pages have focused tests, but still need broader live/manual runtime-path verification.
+- Additional empty/error-state audit is still in progress across remaining pages.
 - Some host log visibility is limited by journal permissions.
 
 ## Deferred / pending

@@ -33,6 +33,8 @@ import { useUrlSorting } from "@/lib/use-url-sorting";
 const AGENT_SORTABLE_COLUMNS = [
   "name",
   "status",
+  "model_provider",
+  "model_name",
   "openclaw_session_id",
   "board_id",
   "last_seen_at",
@@ -155,7 +157,7 @@ export default function AgentsPage() {
             emptyState={{
               title: "No agents yet",
               description:
-                "Create your first agent to start executing tasks on this board.",
+                "Create your first agent to start executing tasks across Mission Control.",
               actionHref: "/agents/new",
               actionLabel: "Create your first agent",
             }}

@@ -42,6 +42,7 @@ function GlobalApprovalsInner() {
     if (boardsQuery.data?.status !== 200) return [];
     return boardsQuery.data.data.items ?? [];
   }, [boardsQuery.data]);
+  const hasBoards = boards.length > 0;
 
   const boardLabelById = useMemo(() => {
     const entries = boards.map((board: BoardRead) => [board.id, board.name]);
@@ -172,11 +173,21 @@ function GlobalApprovalsInner() {
           <BoardApprovalsPanel
             boardId="global"
             approvals={approvals}
-            isLoading={boardsQuery.isLoading || approvalsQuery.isLoading}
+            isLoading={boardsQuery.isLoading || (hasBoards && approvalsQuery.isLoading)}
             error={combinedError}
             onDecision={handleDecision}
             scrollable
             boardLabelById={boardLabelById}
+            emptyState={
+              !boardsQuery.isLoading && !hasBoards
+                ? {
+                    title: "No boards configured yet",
+                    description:
+                      "Create a board before Mission Control can collect approvals across workflows.",
+                    tone: "neutral",
+                  }
+                : undefined
+            }
           />
         </div>
       </div>

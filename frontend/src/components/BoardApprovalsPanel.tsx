@@ -46,6 +46,11 @@ type BoardApprovalsPanelProps = {
   approvals?: ApprovalRead[];
   isLoading?: boolean;
   error?: string | null;
+  emptyState?: {
+    title: string;
+    description: string;
+    tone?: "success" | "neutral";
+  };
   onDecision?: (approvalId: string, status: "approved" | "rejected") => void;
   scrollable?: boolean;
   boardLabelById?: Record<string, string>;
@@ -395,6 +400,7 @@ export function BoardApprovalsPanel({
   approvals: externalApprovals,
   isLoading: externalLoading,
   error: externalError,
+  emptyState,
   onDecision,
   scrollable = false,
   boardLabelById,
@@ -563,15 +569,22 @@ export function BoardApprovalsPanel({
           )}
         >
           <div className="max-w-sm">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+            <div
+              className={cn(
+                "mx-auto flex h-12 w-12 items-center justify-center rounded-full",
+                emptyState?.tone === "neutral"
+                  ? "bg-slate-100 text-slate-500"
+                  : "bg-emerald-50 text-emerald-600",
+              )}
+            >
               <CheckCircle2 className="h-6 w-6" />
             </div>
             <p className="mt-4 text-sm font-semibold text-slate-900">
-              All clear
+              {emptyState?.title ?? "All clear"}
             </p>
             <p className="mt-2 text-sm text-slate-500">
-              No approvals to review right now. New approvals will show up here
-              as soon as they arrive.
+              {emptyState?.description ??
+                "No approvals to review right now. New approvals will show up here as soon as they arrive."}
             </p>
           </div>
         </div>
