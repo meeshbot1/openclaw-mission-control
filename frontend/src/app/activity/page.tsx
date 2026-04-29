@@ -1490,6 +1490,8 @@ export default function ActivityPage() {
   const hasUnresolvedDeepLink = Boolean(
     selectedEventId && !selectedFeedItemId && !isFeedLoading && !feedError,
   );
+  const showNoBoardsEmptyState =
+    boards.length === 0 && !isFeedLoading && !feedError;
 
   return (
     <DashboardShell>
@@ -1532,18 +1534,30 @@ export default function ActivityPage() {
                     Requested activity item is not in the current feed window yet.
                   </div>
                 ) : null}
-                <ActivityFeed
-                  isLoading={isFeedLoading}
-                  errorMessage={feedError}
-                  items={orderedFeed}
-                  renderItem={(item) => (
-                    <FeedCard
-                      key={item.id}
-                      item={item}
-                      isHighlighted={highlightedFeedItemId === item.id}
-                    />
-                  )}
-                />
+                {showNoBoardsEmptyState ? (
+                  <div className="rounded-xl border border-slate-200 bg-white p-10 text-center shadow-sm">
+                    <p className="text-sm font-medium text-slate-900">
+                      No boards configured yet.
+                    </p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Create a board before Mission Control can collect live task,
+                      approval, agent, and chat activity.
+                    </p>
+                  </div>
+                ) : (
+                  <ActivityFeed
+                    isLoading={isFeedLoading}
+                    errorMessage={feedError}
+                    items={orderedFeed}
+                    renderItem={(item) => (
+                      <FeedCard
+                        key={item.id}
+                        item={item}
+                        isHighlighted={highlightedFeedItemId === item.id}
+                      />
+                    )}
+                  />
+                )}
               </div>
             </main>
           </SignedIn>
