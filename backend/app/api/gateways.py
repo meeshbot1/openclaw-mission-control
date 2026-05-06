@@ -23,8 +23,10 @@ from app.schemas.gateways import (
     GatewayTemplatesSyncResult,
     GatewayUpdate,
 )
+from app.schemas.mission_control import MissionControlOperationsResponse
 from app.schemas.pagination import DefaultLimitOffsetPage
 from app.services.openclaw.admin_service import GatewayAdminLifecycleService
+from app.services.openclaw.mission_control_ops_service import MissionControlOperationsService
 from app.services.openclaw.session_service import GatewayTemplateSyncQuery
 
 if TYPE_CHECKING:
@@ -85,6 +87,16 @@ async def list_gateways(
     )
 
     return await paginate(session, statement)
+
+
+@router.get("/mission-control/live", response_model=MissionControlOperationsResponse)
+async def mission_control_live_operations(
+    session: AsyncSession = SESSION_DEP,
+    ctx: OrganizationContext = ORG_ADMIN_DEP,
+) -> MissionControlOperationsResponse:
+    """Return live OMX team + gateway runtime operations for dashboard admins."""
+    service = MissionControlOperationsService(session)
+    return await service.get_live_operations(organization_id=ctx.organization.id)
 
 
 @router.post("", response_model=GatewayRead)

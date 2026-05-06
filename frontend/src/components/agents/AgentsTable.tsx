@@ -29,7 +29,7 @@ type AgentsTableEmptyState = {
 };
 
 type AgentsTableProps = {
-  agents: AgentRead[];
+  agents: AgentTableRow[];
   boards?: BoardRead[];
   isLoading?: boolean;
   sorting?: SortingState;
@@ -41,7 +41,13 @@ type AgentsTableProps = {
   stickyHeader?: boolean;
   emptyMessage?: string;
   emptyState?: AgentsTableEmptyState;
-  onDelete?: (agent: AgentRead) => void;
+  onDelete?: (agent: AgentTableRow) => void;
+};
+
+export type AgentTableRow = AgentRead & {
+  runtime_only?: boolean;
+  runtime_kind?: "agent" | "subagent";
+  runtime_gateway_name?: string | null;
 };
 
 const DEFAULT_EMPTY_ICON = (
@@ -99,17 +105,37 @@ export function AgentsTable({
     [boards],
   );
 
-  const columns = useMemo<ColumnDef<AgentRead>[]>(() => {
-    const baseColumns: ColumnDef<AgentRead>[] = [
+  const columns = useMemo<ColumnDef<AgentTableRow>[]>(() => {
+    const baseColumns: ColumnDef<AgentTableRow>[] = [
       {
         accessorKey: "name",
         header: "Agent",
-        cell: ({ row }) =>
-          linkifyCell({
+        cell: ({ row }) => {
+          if (row.original.runtime_only) {
+            const runtimeKind =
+              row.original.runtime_kind === "subagent"
+                ? "Runtime sidecar"
+                : "Runtime agent";
+            const gatewayName = row.original.runtime_gateway_name?.trim();
+            return (
+              <div>
+                <div className="font-medium text-slate-900">
+                  {row.original.name}
+                </div>
+                <div className="text-xs text-slate-500">
+                  {gatewayName
+                    ? `${runtimeKind} · ${gatewayName}`
+                    : runtimeKind}
+                </div>
+              </div>
+            );
+          }
+          return linkifyCell({
             href: `/agents/${row.original.id}`,
             label: row.original.name,
             subtitle: `ID ${row.original.id}`,
-          }),
+          });
+        },
       },
       {
         accessorKey: "status",
@@ -199,8 +225,26 @@ export function AgentsTable({
       rowActions={
         showActions
           ? {
-              getEditHref: (agent) => `/agents/${agent.id}/edit`,
-              onDelete,
+              actions: [
+                {
+                  key: "edit",
+                  label: "Edit",
+                  href: (agent) =>
+                    agent.runtime_only ? null : `/agents/${agent.id}/edit`,
+                  isVisible: (agent) => !agent.runtime_only,
+                },
+                ...(onDelete
+                  ? [
+                      {
+                        key: "delete",
+                        label: "Delete",
+                        onClick: onDelete,
+                        isVisible: (agent: AgentTableRow) =>
+                          !agent.runtime_only,
+                      },
+                    ]
+                  : []),
+              ],
             }
           : undefined
       }

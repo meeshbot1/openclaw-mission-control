@@ -22,7 +22,7 @@ import { DashboardSidebar } from "@/components/organisms/DashboardSidebar";
 import { DashboardShell } from "@/components/templates/DashboardShell";
 import { Markdown } from "@/components/atoms/Markdown";
 import { SignedOutPanel } from "@/components/auth/SignedOutPanel";
-import { ApiError } from "@/api/mutator";
+import { ApiError, customFetch } from "@/api/mutator";
 import {
   type listGatewaysApiV1GatewaysGetResponse,
   useListGatewaysApiV1GatewaysGet,
@@ -31,9 +31,6 @@ import {
   type dashboardMetricsApiV1MetricsDashboardGetResponse,
   useDashboardMetricsApiV1MetricsDashboardGet,
 } from "@/api/generated/metrics/metrics";
-import {
-  gatewaysStatusApiV1GatewaysStatusGet,
-} from "@/api/generated/gateways/gateways";
 import {
   type GatewayRead,
   type GatewaysStatusResponse,
@@ -56,6 +53,7 @@ import {
   formatTimestamp,
   parseTimestamp,
 } from "@/lib/formatters";
+import { type GatewayCronView, toGatewayCronView } from "@/lib/gateway-crons";
 
 type SessionSummary = {
   key: string;
@@ -76,6 +74,9 @@ type GatewayTarget = {
   gatewayId: string;
   gatewayName: string;
   gatewayUrl: string;
+  gatewayToken: string | null;
+  disableDevicePairing: boolean;
+  allowInsecureTls: boolean;
   workspaceRoot: string;
   boardId: string | null;
   boardName: string | null;
@@ -90,6 +91,130 @@ type GatewaySnapshot = GatewayTarget & {
   mainSessionError: string | null;
   error: string | null;
   requestError: string | null;
+};
+
+type GatewayRuntimeSessionStatus = {
+  agent_id: string;
+  session_key: string;
+  status: string;
+  raw_status?: string | null;
+  updated_at?: number | null;
+  age_seconds?: number | null;
+  channel?: string | null;
+  model_provider?: string | null;
+  model?: string | null;
+  working_on?: string | null;
+  with_agents: string[];
+  is_subagent: boolean;
+  parent_agent_id?: string | null;
+  parent_session_key?: string | null;
+  label?: string | null;
+};
+
+type GatewayRuntimeEdge = {
+  from_agent: string;
+  to_agent: string;
+  relation: string;
+  session_key?: string | null;
+};
+
+type GatewayRuntimeOverview = {
+  generated_at_ms: number;
+  summary: Record<string, number>;
+  agents: GatewayRuntimeSessionStatus[];
+  subagents: GatewayRuntimeSessionStatus[];
+  edges: GatewayRuntimeEdge[];
+};
+
+type GatewayRuntimeSnapshot = GatewayTarget & {
+  overview: GatewayRuntimeOverview | null;
+  requestError: string | null;
+};
+
+type GatewayCronSnapshot = GatewayTarget & {
+  crons: GatewayCronView[];
+  requestError: string | null;
+};
+
+type MissionControlTaskCounts = {
+  pending: number;
+  in_progress: number;
+  completed: number;
+  failed: number;
+  blocked: number;
+  other: number;
+};
+
+type MissionControlTaskSummary = {
+  task_id: string;
+  subject: string;
+  status: string;
+  owner?: string | null;
+  role?: string | null;
+};
+
+type MissionControlWorkerStatus = {
+  name: string;
+  role?: string | null;
+  pane_id?: string | null;
+  state?: string | null;
+  reason?: string | null;
+  task_id?: string | null;
+  alive?: boolean | null;
+  updated_at?: string | null;
+};
+
+type MissionControlMailboxMessage = {
+  message_id?: string | null;
+  from_worker?: string | null;
+  to_worker?: string | null;
+  body: string;
+  created_at?: string | null;
+  delivered_at?: string | null;
+};
+
+type MissionControlEventSummary = {
+  event_id?: string | null;
+  type: string;
+  worker?: string | null;
+  message_id?: string | null;
+  task_id?: string | null;
+  created_at?: string | null;
+};
+
+type MissionControlTeamOperation = {
+  team_name: string;
+  task?: string | null;
+  state_root: string;
+  project_root?: string | null;
+  tasks_total: number;
+  workers_total: number;
+  task_counts: MissionControlTaskCounts;
+  tasks: MissionControlTaskSummary[];
+  workers: MissionControlWorkerStatus[];
+  recent_messages: MissionControlMailboxMessage[];
+  recent_events: MissionControlEventSummary[];
+};
+
+type MissionControlGatewayRuntime = {
+  gateway_id: string;
+  gateway_name: string;
+  gateway_url?: string | null;
+  workspace_root?: string | null;
+  ok: boolean;
+  error?: string | null;
+  generated_at_ms?: number | null;
+  summary: Record<string, number>;
+  agents: GatewayRuntimeSessionStatus[];
+  subagents: GatewayRuntimeSessionStatus[];
+};
+
+type MissionControlOperationsResponse = {
+  generated_at: string;
+  scanned_roots: string[];
+  summary: Record<string, number>;
+  teams: MissionControlTeamOperation[];
+  gateways: MissionControlGatewayRuntime[];
 };
 
 const DASH = "—";
@@ -208,6 +333,17 @@ const sessionIdentifiers = (record: Record<string, unknown> | null): string[] =>
 const sharesSessionIdentity = (left: string[], right: string[]): boolean =>
   left.some((value) => right.includes(value));
 
+const gatewayQueryParams = (target: GatewayTarget): URLSearchParams => {
+  const params = new URLSearchParams();
+  params.set("gateway_url", target.gatewayUrl);
+  if (target.gatewayToken) {
+    params.set("gateway_token", target.gatewayToken);
+  }
+  params.set("gateway_disable_device_pairing", String(target.disableDevicePairing));
+  params.set("gateway_allow_insecure_tls", String(target.allowInsecureTls));
+  return params;
+};
+
 const compactNumber = (value: number): string => {
   if (!Number.isFinite(value)) return DASH;
   if (Math.abs(value) >= 1_000_000) {
@@ -229,6 +365,26 @@ const formatPerDay = (total: number, days: number): string => {
   if (!Number.isFinite(total) || !Number.isFinite(days) || days <= 0) return DASH;
   return `${(total / days).toFixed(1)}/day`;
 };
+
+const statusToneClass = (status: string | null | undefined): string => {
+  const normalized = (status ?? "").toLowerCase();
+  if (normalized === "completed" || normalized === "done" || normalized === "ok") {
+    return "bg-emerald-100 text-emerald-700";
+  }
+  if (normalized === "in_progress" || normalized === "busy" || normalized === "working") {
+    return "bg-blue-100 text-blue-700";
+  }
+  if (normalized === "failed" || normalized === "error" || normalized === "broken") {
+    return "bg-rose-100 text-rose-700";
+  }
+  if (normalized === "blocked" || normalized === "pending" || normalized === "waiting") {
+    return "bg-amber-100 text-amber-700";
+  }
+  return "bg-slate-200 text-slate-700";
+};
+
+const formatStatusLabel = (status: string | null | undefined): string =>
+  (status ?? "unknown").replace(/_/g, " ");
 
 const toSessionSummaries = (
   sessions: unknown[] | null | undefined,
@@ -595,6 +751,9 @@ export default function DashboardPage() {
         gatewayId: gateway.id,
         gatewayName: gateway.name,
         gatewayUrl: gateway.url,
+        gatewayToken: gateway.token ?? null,
+        disableDevicePairing: Boolean(gateway.disable_device_pairing),
+        allowInsecureTls: Boolean(gateway.allow_insecure_tls),
         workspaceRoot: gateway.workspace_root,
         boardId: linkedBoard?.boardId ?? null,
         boardName: linkedBoard?.boardName ?? null,
@@ -616,10 +775,17 @@ export default function DashboardPage() {
       return Promise.all(
         gatewayTargets.map(async (target): Promise<GatewaySnapshot> => {
           try {
-            const response = await gatewaysStatusApiV1GatewaysStatusGet(
-              target.boardId ? { board_id: target.boardId } : undefined,
-              { signal },
-            );
+            const params = target.boardId
+              ? new URLSearchParams({ board_id: target.boardId })
+              : gatewayQueryParams(target);
+            const response = await customFetch<{
+              data: GatewaysStatusResponse;
+              status: number;
+              headers: Headers;
+            }>(`/api/v1/gateways/status?${params.toString()}`, {
+              method: "GET",
+              signal,
+            });
             if (response.status !== 200) {
               return {
                 ...target,
@@ -633,7 +799,7 @@ export default function DashboardPage() {
                 requestError: `Gateway status request failed (${response.status})`,
               };
             }
-            const payload: GatewaysStatusResponse = response.data;
+            const payload = response.data;
             return {
               ...target,
               connected: Boolean(payload.connected),
@@ -668,6 +834,125 @@ export default function DashboardPage() {
   const gatewaySnapshots = useMemo(
     () => gatewayStatusesQuery.data ?? [],
     [gatewayStatusesQuery.data],
+  );
+  const gatewayRuntimeQuery = useQuery<GatewayRuntimeSnapshot[], ApiError>({
+    queryKey: [
+      "dashboard",
+      "gateway-runtime-overviews",
+      gatewayTargets.map((target) => `${target.gatewayId}:${target.gatewayUrl}`),
+    ],
+    enabled: Boolean(isSignedIn && hasConfiguredGateways),
+    refetchInterval: 15_000,
+    refetchOnMount: "always",
+    queryFn: async ({ signal }) => {
+      return Promise.all(
+        gatewayTargets.map(async (target): Promise<GatewayRuntimeSnapshot> => {
+          try {
+            const params = gatewayQueryParams(target);
+            const response = await customFetch<{
+              data: GatewayRuntimeOverview;
+              status: number;
+              headers: Headers;
+            }>(`/api/v1/gateways/runtime-overview?${params.toString()}`, {
+              method: "GET",
+              signal,
+            });
+            return {
+              ...target,
+              overview: response.status === 200 ? response.data : null,
+              requestError:
+                response.status === 200
+                  ? null
+                  : `Runtime overview request failed (${response.status})`,
+            };
+          } catch (error) {
+            if (signal.aborted) throw error;
+            return {
+              ...target,
+              overview: null,
+              requestError:
+                error instanceof Error
+                  ? error.message
+                  : "Runtime overview request failed.",
+            };
+          }
+        }),
+      );
+    },
+  });
+  const gatewayCronQuery = useQuery<GatewayCronSnapshot[], ApiError>({
+    queryKey: [
+      "dashboard",
+      "gateway-crons",
+      gatewayTargets.map((target) => `${target.gatewayId}:${target.gatewayUrl}`),
+    ],
+    enabled: Boolean(isSignedIn && hasConfiguredGateways),
+    refetchInterval: 15_000,
+    refetchOnMount: "always",
+    queryFn: async ({ signal }) => {
+      return Promise.all(
+        gatewayTargets.map(async (target): Promise<GatewayCronSnapshot> => {
+          try {
+            const params = gatewayQueryParams(target);
+            const response = await customFetch<{
+              data: { crons: object[] };
+              status: number;
+              headers: Headers;
+            }>(`/api/v1/gateways/crons?${params.toString()}`, {
+              method: "GET",
+              signal,
+            });
+            return {
+              ...target,
+              crons:
+                response.status === 200
+                  ? (response.data.crons ?? []).map((cron) => toGatewayCronView(cron))
+                  : [],
+              requestError:
+                response.status === 200
+                  ? null
+                  : `Cron request failed (${response.status})`,
+            };
+          } catch (error) {
+            if (signal.aborted) throw error;
+            return {
+              ...target,
+              crons: [],
+              requestError:
+                error instanceof Error ? error.message : "Cron request failed.",
+            };
+          }
+        }),
+      );
+    },
+  });
+  const liveOperationsQuery = useQuery<MissionControlOperationsResponse, ApiError>({
+    queryKey: ["dashboard", "mission-control-live-operations"],
+    enabled: Boolean(isSignedIn),
+    refetchInterval: 5_000,
+    refetchOnMount: "always",
+    queryFn: async ({ signal }) => {
+      const response = await customFetch<{
+        data: MissionControlOperationsResponse;
+        status: number;
+        headers: Headers;
+      }>("/api/v1/gateways/mission-control/live", {
+        method: "GET",
+        signal,
+      });
+      if (response.status !== 200) {
+        throw new Error(`Live operations request failed (${response.status})`);
+      }
+      return response.data;
+    },
+  });
+  const runtimeSnapshots = useMemo(
+    () => gatewayRuntimeQuery.data ?? [],
+    [gatewayRuntimeQuery.data],
+  );
+  const cronSnapshots = useMemo(
+    () => gatewayCronQuery.data ?? [],
+    [gatewayCronQuery.data],
   );
   const sessionSummaries = useMemo(
     () =>
@@ -720,7 +1005,6 @@ export default function DashboardPage() {
   const reviewTasksMetric = metrics?.kpis.review_tasks ?? 0;
   const doneTasksMetric = metrics?.kpis.done_tasks ?? 0;
 
-  const activeAgentsMetric = onlineAgents;
   const tasksTotal = inboxTasksMetric + inProgressTasksMetric + reviewTasksMetric + doneTasksMetric;
   const tasksInProgressMetric = metrics?.kpis.tasks_in_progress ?? inProgressTasksMetric;
   const errorRateMetric = Number(metrics?.kpis.error_rate_pct ?? 0);
@@ -748,6 +1032,81 @@ export default function DashboardPage() {
     0,
   );
   const activeSessions = Math.max(countedSessions, sessionSummaries.length);
+  const runtimeSummary = runtimeSnapshots.reduce(
+    (summary, snapshot) => {
+      const values = snapshot.overview?.summary ?? {};
+      summary.agents += values.agents_total ?? snapshot.overview?.agents.length ?? 0;
+      summary.subagents += values.subagents_total ?? snapshot.overview?.subagents.length ?? 0;
+      summary.edges += values.edges_total ?? snapshot.overview?.edges.length ?? 0;
+      summary.working += values.working ?? 0;
+      summary.idle += values.idle ?? 0;
+      summary.waiting += values.waiting ?? 0;
+      summary.broken += values.broken ?? 0;
+      return summary;
+    },
+    {
+      agents: 0,
+      subagents: 0,
+      edges: 0,
+      working: 0,
+      idle: 0,
+      waiting: 0,
+      broken: 0,
+    },
+  );
+  const runtimeModels = useMemo(
+    () =>
+      [
+        ...new Set(
+          runtimeSnapshots
+            .flatMap((snapshot) => [
+              ...(snapshot.overview?.agents ?? []).map((agent) => agent.model),
+              ...(snapshot.overview?.subagents ?? []).map((agent) => agent.model),
+            ])
+            .filter((model): model is string => Boolean(model)),
+        ),
+      ].sort((left, right) => left.localeCompare(right)),
+    [runtimeSnapshots],
+  );
+  const allCronRecords = useMemo(
+    () => cronSnapshots.flatMap((snapshot) => snapshot.crons),
+    [cronSnapshots],
+  );
+  const enabledCronCount = allCronRecords.filter((cron) => cron.enabled === true).length;
+  const failingCronCount = allCronRecords.filter((cron) => {
+    const status = (cron.lastRunStatus ?? "").toLowerCase();
+    return status === "failed" || status === "error" || status === "timeout";
+  }).length;
+  const cronModels = useMemo(
+    () =>
+      [
+        ...new Set(
+          allCronRecords
+            .map((cron) => cron.model)
+            .filter((model): model is string => Boolean(model)),
+        ),
+      ].sort((left, right) => left.localeCompare(right)),
+    [allCronRecords],
+  );
+  const runtimeAgentsTotal = runtimeSummary.agents + runtimeSummary.subagents;
+  const activeAgentsMetric = runtimeAgentsTotal > 0 ? runtimeAgentsTotal : onlineAgents;
+  const liveOperations = liveOperationsQuery.data ?? null;
+  const liveTeams = useMemo(
+    () =>
+      [...(liveOperations?.teams ?? [])].sort((left, right) => {
+        const leftActive = left.task_counts.in_progress + left.task_counts.blocked;
+        const rightActive = right.task_counts.in_progress + right.task_counts.blocked;
+        return rightActive - leftActive || left.team_name.localeCompare(right.team_name);
+      }),
+    [liveOperations],
+  );
+  const visibleLiveTeams = liveTeams.slice(0, 5);
+  const liveOperationsSummary = liveOperations?.summary ?? {};
+  const liveTaskTotal = liveOperationsSummary.tasks_total ?? 0;
+  const liveWorkersTotal = liveOperationsSummary.workers_total ?? 0;
+  const liveWorkersActive = liveOperationsSummary.workers_active ?? 0;
+  const liveGatewaysOk = liveOperationsSummary.gateways_ok ?? 0;
+  const liveGatewaysTotal = liveOperationsSummary.gateways_total ?? 0;
 
   const gatewayStatusLabel = !hasConfiguredGateways
     ? "Not configured"
@@ -951,7 +1310,11 @@ export default function DashboardPage() {
               <TopMetricCard
                 title="Online Agents"
                 value={formatCount(activeAgentsMetric)}
-                secondary={`${formatCount(agents.length)} total`}
+                secondary={
+                  runtimeAgentsTotal > 0
+                    ? `${formatCount(runtimeSummary.agents)} agents · ${formatCount(runtimeSummary.subagents)} sidecars`
+                    : `${formatCount(agents.length)} total`
+                }
                 icon={<Bot className="h-4 w-4" />}
                 accent="blue"
               />
@@ -998,6 +1361,264 @@ export default function DashboardPage() {
                 rows={gatewayRows}
               />
             </div>
+
+            <section className="mt-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
+              <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900">
+                    Runtime Coverage
+                  </h3>
+                  <p className="text-sm text-slate-500">
+                    Live gateway data, cron health, and persisted board/task coverage.
+                  </p>
+                </div>
+                <span className="text-xs text-slate-500">
+                  Auto-refresh 15s
+                </span>
+              </div>
+              <div className="grid gap-3 lg:grid-cols-4">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Agents and teams
+                  </p>
+                  <p className="mt-2 text-2xl font-semibold text-slate-900">
+                    {formatCount(runtimeAgentsTotal)}
+                  </p>
+                  <p className="mt-1 text-sm text-slate-600">
+                    {formatCount(runtimeSummary.agents)} agents ·{" "}
+                    {formatCount(runtimeSummary.subagents)} sidecars/subagents
+                  </p>
+                  <p className="mt-2 text-xs text-slate-500">
+                    {formatCount(runtimeSummary.working)} working ·{" "}
+                    {formatCount(runtimeSummary.waiting)} waiting ·{" "}
+                    {formatCount(runtimeSummary.broken)} broken
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Collaboration graph
+                  </p>
+                  <p className="mt-2 text-2xl font-semibold text-slate-900">
+                    {formatCount(runtimeSummary.edges)}
+                  </p>
+                  <p className="mt-1 text-sm text-slate-600">
+                    agent-to-agent runtime edges
+                  </p>
+                  <p className="mt-2 text-xs text-slate-500">
+                    Models: {runtimeModels.length ? runtimeModels.join(", ") : DASH}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Cron jobs
+                  </p>
+                  <p className="mt-2 text-2xl font-semibold text-slate-900">
+                    {formatCount(allCronRecords.length)}
+                  </p>
+                  <p className="mt-1 text-sm text-slate-600">
+                    {formatCount(enabledCronCount)} enabled ·{" "}
+                    {formatCount(failingCronCount)} failing last run
+                  </p>
+                  <p className="mt-2 text-xs text-slate-500">
+                    Models: {cronModels.length ? cronModels.join(", ") : DASH}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Boards, tasks, feeds
+                  </p>
+                  <p className="mt-2 text-2xl font-semibold text-slate-900">
+                    {formatCount(tasksTotal)}
+                  </p>
+                  <p className="mt-1 text-sm text-slate-600">
+                    {formatCount(boards.length)} boards ·{" "}
+                    {formatCount(recentLogs.length)} recent feed items
+                  </p>
+                  <p className="mt-2 text-xs text-slate-500">
+                    {boards.length === 0
+                      ? "No project boards are configured; task boards and board feeds are empty."
+                      : "Board task, forum, and sidecar feeds are available from each board."}
+                  </p>
+                </div>
+              </div>
+              {runtimeSnapshots.some((snapshot) => snapshot.requestError) ||
+              cronSnapshots.some((snapshot) => snapshot.requestError) ? (
+                <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+                  Some gateway runtime or cron checks failed. Open the gateway detail page
+                  for per-gateway errors.
+                </div>
+              ) : null}
+            </section>
+
+            <section className="mt-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
+              <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900">
+                    Live Operations
+                  </h3>
+                  <p className="text-sm text-slate-500">
+                    Codex team sessions, task progress, worker panes, and gateway runtime agents.
+                  </p>
+                </div>
+                <span className="text-xs text-slate-500">
+                  Auto-refresh 5s
+                </span>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-4">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Codex teams
+                  </p>
+                  <p className="mt-2 text-2xl font-semibold text-slate-900">
+                    {formatCount(liveTeams.length)}
+                  </p>
+                  <p className="mt-1 text-sm text-slate-600">
+                    {formatCount(liveTaskTotal)} tracked tasks
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Worker panes
+                  </p>
+                  <p className="mt-2 text-2xl font-semibold text-slate-900">
+                    {formatCount(liveWorkersTotal)}
+                  </p>
+                  <p className="mt-1 text-sm text-slate-600">
+                    {formatCount(liveWorkersActive)} active
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Runtime gateways
+                  </p>
+                  <p className="mt-2 text-2xl font-semibold text-slate-900">
+                    {formatCount(liveGatewaysOk)}
+                  </p>
+                  <p className="mt-1 text-sm text-slate-600">
+                    of {formatCount(liveGatewaysTotal)} responding
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Scan roots
+                  </p>
+                  <p className="mt-2 text-2xl font-semibold text-slate-900">
+                    {formatCount(liveOperations?.scanned_roots.length ?? 0)}
+                  </p>
+                  <p className="mt-1 truncate text-sm text-slate-600">
+                    {liveOperations?.generated_at
+                      ? formatRelativeTimestamp(liveOperations.generated_at)
+                      : "Awaiting first scan"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 space-y-3">
+                {liveOperationsQuery.isLoading ? (
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-500">
+                    Loading live operations...
+                  </div>
+                ) : liveOperationsQuery.error ? (
+                  <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+                    Live operations are temporarily unavailable: {liveOperationsQuery.error.message}
+                  </div>
+                ) : visibleLiveTeams.length > 0 ? (
+                  visibleLiveTeams.map((team) => {
+                    const firstMessage = team.recent_messages[0];
+                    const firstEvent = team.recent_events[0];
+                    return (
+                      <div
+                        key={`${team.state_root}:${team.team_name}`}
+                        className="rounded-lg border border-slate-200 bg-white p-3"
+                      >
+                        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-slate-900">
+                              {team.team_name}
+                            </p>
+                            <p className="mt-0.5 line-clamp-2 text-xs text-slate-500">
+                              {team.task || team.project_root || team.state_root}
+                            </p>
+                          </div>
+                          <div className="grid shrink-0 grid-cols-3 gap-2 text-right text-xs">
+                            <div>
+                              <p className="font-semibold text-blue-700">
+                                {formatCount(team.task_counts.in_progress)}
+                              </p>
+                              <p className="text-slate-500">working</p>
+                            </div>
+                            <div>
+                              <p className="font-semibold text-emerald-700">
+                                {formatCount(team.task_counts.completed)}
+                              </p>
+                              <p className="text-slate-500">done</p>
+                            </div>
+                            <div>
+                              <p className="font-semibold text-rose-700">
+                                {formatCount(team.task_counts.failed + team.task_counts.blocked)}
+                              </p>
+                              <p className="text-slate-500">blocked</p>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 grid gap-3 lg:grid-cols-[1.2fr_1fr]">
+                          <div className="space-y-2">
+                            {team.tasks.slice(0, 4).map((task) => (
+                              <div
+                                key={`${team.team_name}:${task.task_id}`}
+                                className="flex items-center justify-between gap-3 rounded-md bg-slate-50 px-3 py-2"
+                              >
+                                <span className="min-w-0 truncate text-sm text-slate-700">
+                                  {task.subject}
+                                </span>
+                                <span
+                                  className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${statusToneClass(task.status)}`}
+                                >
+                                  {formatStatusLabel(task.status)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="space-y-2">
+                            <div className="flex flex-wrap gap-2">
+                              {team.workers.map((worker) => (
+                                <span
+                                  key={`${team.team_name}:${worker.name}`}
+                                  className={`inline-flex max-w-full items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium ${statusToneClass(worker.state)}`}
+                                  title={worker.reason ?? undefined}
+                                >
+                                  <span className="truncate">{worker.name}</span>
+                                  <span className="text-slate-500">{worker.pane_id ?? "no pane"}</span>
+                                </span>
+                              ))}
+                            </div>
+                            <div className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                              {firstMessage ? (
+                                <p className="line-clamp-2">
+                                  {firstMessage.from_worker ?? "worker"}: {firstMessage.body}
+                                </p>
+                              ) : firstEvent ? (
+                                <p className="line-clamp-2">
+                                  {firstEvent.worker ?? "event"}: {firstEvent.type}
+                                </p>
+                              ) : (
+                                <p>No recent mailbox or team events.</p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-500">
+                    No OMX team sessions found in the configured gateway workspaces yet.
+                  </div>
+                )}
+              </div>
+            </section>
 
             <section className="mt-4 rounded-xl border border-slate-200 bg-white p-4 md:p-6 shadow-sm">
               <div className="mb-3 flex items-center justify-between gap-3">
