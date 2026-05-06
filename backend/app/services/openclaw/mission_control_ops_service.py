@@ -41,6 +41,7 @@ IGNORED_SCAN_DIRS = {
 MAX_SCAN_DEPTH = 5
 MAX_RECENT_MESSAGES = 8
 MAX_RECENT_EVENTS = 8
+ACTIVE_WORKER_STATES = {"busy", "working", "in_progress"}
 
 
 class MissionControlOperationsService:
@@ -65,7 +66,10 @@ class MissionControlOperationsService:
         )
 
         active_workers = sum(
-            1 for team in teams for worker in team.workers if (worker.state or "").strip() == "busy"
+            1
+            for team in teams
+            for worker in team.workers
+            if (worker.state or "").strip().lower() in ACTIVE_WORKER_STATES
         )
         summary = {
             "teams_total": len(teams),
