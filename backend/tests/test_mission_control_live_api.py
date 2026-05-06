@@ -88,6 +88,7 @@ def _write_team_state(
     team_name: str,
     worker_name: str,
     message_body: str,
+    worker_state: str = "busy",
 ) -> None:
     team_root = root / ".omx" / "state" / "team" / team_name
     (team_root / "tasks").mkdir(parents=True, exist_ok=True)
@@ -107,7 +108,7 @@ def _write_team_state(
     (team_root / "monitor-snapshot.json").write_text(
         json.dumps(
             {
-                "workerStateByName": {worker_name: "busy"},
+                "workerStateByName": {worker_name: worker_state},
                 "workerTaskIdByName": {worker_name: "1"},
                 "workerAliveByName": {worker_name: True},
             }
@@ -139,7 +140,7 @@ def _write_team_state(
     (team_root / "workers" / worker_name / "status.json").write_text(
         json.dumps(
             {
-                "state": "busy",
+                "state": worker_state,
                 "updated_at": "2026-05-06T01:11:00Z",
             }
         ),
@@ -203,6 +204,7 @@ async def test_mission_control_live_operations_returns_team_and_gateway_data(
         team_name="project-team",
         worker_name="worker-2",
         message_body="Project scan complete",
+        worker_state="working",
     )
 
     try:
@@ -251,6 +253,7 @@ async def test_mission_control_live_operations_returns_team_and_gateway_data(
         assert response.status_code == 200
         body = response.json()
         assert body["summary"]["teams_total"] == 2
+        assert body["summary"]["workers_active"] == 2
         assert body["summary"]["gateways_total"] == 1
         assert set(body["scanned_roots"]) == {str(gateway_root), str(extra_project_root)}
         team_names = {team["team_name"] for team in body["teams"]}
