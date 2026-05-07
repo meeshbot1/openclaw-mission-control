@@ -13,7 +13,7 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/auth/clerk", () => ({
   SignedIn: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  SignedOut: ({ children }: { children: React.ReactNode }) => null,
+  SignedOut: (_props: { children: React.ReactNode }) => null,
   SignInButton: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   useAuth: () => ({ isSignedIn: true }),
   useUser: () => ({ user: { fullName: "Ada Lovelace" } }),

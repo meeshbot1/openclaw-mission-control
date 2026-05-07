@@ -177,8 +177,11 @@ export default function EditAgentPage() {
     return withIdentityDefaults(null);
   }, [loadedAgent?.identity_profile]);
 
-  const isLoading =
-    boardsQuery.isLoading || agentQuery.isLoading || updateMutation.isPending;
+  const isInitialLoading =
+    (boardsQuery.isLoading && boards.length === 0) ||
+    (agentQuery.isLoading && !loadedAgent);
+  const isSaving = updateMutation.isPending;
+  const isLoading = isInitialLoading || isSaving;
   const errorMessage =
     error ?? agentQuery.error?.message ?? boardsQuery.error?.message ?? null;
 
@@ -348,7 +351,7 @@ export default function EditAgentPage() {
                   triggerClassName="w-full h-11 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                   contentClassName="rounded-xl border border-slate-200 shadow-lg"
                   itemClassName="px-4 py-3 text-sm text-slate-700 data-[selected=true]:bg-slate-50 data-[selected=true]:text-slate-900"
-                  disabled={boards.length === 0}
+                  disabled={isLoading || boards.length === 0}
                 />
                 {resolvedIsGatewayMain ? (
                   <p className="text-xs text-slate-500">
@@ -491,6 +494,12 @@ export default function EditAgentPage() {
           </div>
         </div>
 
+        {isInitialLoading ? (
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+            Loading agent details…
+          </div>
+        ) : null}
+
         {errorMessage ? (
           <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-600 shadow-sm">
             {errorMessage}
@@ -499,7 +508,11 @@ export default function EditAgentPage() {
 
         <div className="flex flex-wrap items-center gap-3">
           <Button type="submit" disabled={isLoading}>
-            {isLoading ? "Saving…" : "Save changes"}
+            {isInitialLoading
+              ? "Loading agent…"
+              : isSaving
+                ? "Saving…"
+                : "Save changes"}
           </Button>
           <Button
             variant="outline"
