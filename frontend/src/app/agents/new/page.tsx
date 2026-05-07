@@ -101,7 +101,9 @@ export default function NewAgentPage() {
   const boards =
     boardsQuery.data?.status === 200 ? (boardsQuery.data.data.items ?? []) : [];
   const displayBoardId = boardId || boards[0]?.id || "";
-  const isLoading = boardsQuery.isLoading || createAgentMutation.isPending;
+  const isInitialLoading = boardsQuery.isLoading && boards.length === 0;
+  const isCreating = createAgentMutation.isPending;
+  const isLoading = isInitialLoading || isCreating;
   const errorMessage = error ?? boardsQuery.error?.message ?? null;
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
@@ -202,7 +204,7 @@ export default function NewAgentPage() {
                   triggerClassName="w-full h-11 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                   contentClassName="rounded-xl border border-slate-200 shadow-lg"
                   itemClassName="px-4 py-3 text-sm text-slate-700 data-[selected=true]:bg-slate-50 data-[selected=true]:text-slate-900"
-                  disabled={boards.length === 0}
+                  disabled={isLoading || boards.length === 0}
                 />
                 {boards.length === 0 ? (
                   <p className="text-xs text-slate-500">
@@ -319,6 +321,12 @@ export default function NewAgentPage() {
           </div>
         </div>
 
+        {isInitialLoading ? (
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+            Loading boards…
+          </div>
+        ) : null}
+
         {errorMessage ? (
           <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-600 shadow-sm">
             {errorMessage}
@@ -327,7 +335,11 @@ export default function NewAgentPage() {
 
         <div className="flex flex-wrap items-center gap-3">
           <Button type="submit" disabled={isLoading}>
-            {isLoading ? "Creating…" : "Create agent"}
+            {isInitialLoading
+              ? "Loading boards…"
+              : isCreating
+                ? "Creating…"
+                : "Create agent"}
           </Button>
           <Button
             variant="outline"
