@@ -90,10 +90,11 @@ export default function NewBoardPage() {
     return groupsQuery.data.data.items ?? [];
   }, [groupsQuery.data]);
   const displayGatewayId = gatewayId || gateways[0]?.id || "";
-  const isLoading =
-    gatewaysQuery.isLoading ||
-    groupsQuery.isLoading ||
-    createBoardMutation.isPending;
+  const isInitialLoading =
+    (gatewaysQuery.isLoading && gateways.length === 0) ||
+    (groupsQuery.isLoading && groups.length === 0);
+  const isCreating = createBoardMutation.isPending;
+  const isLoading = isInitialLoading || isCreating;
   const errorMessage =
     error ?? gatewaysQuery.error?.message ?? groupsQuery.error?.message ?? null;
 
@@ -191,6 +192,7 @@ export default function NewBoardPage() {
                 triggerClassName="w-full h-11 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                 contentClassName="rounded-xl border border-slate-200 shadow-lg"
                 itemClassName="px-4 py-3 text-sm text-slate-700 data-[selected=true]:bg-slate-50 data-[selected=true]:text-slate-900"
+                disabled={isLoading}
               />
             </div>
           </div>
@@ -233,6 +235,12 @@ export default function NewBoardPage() {
           </div>
         </div>
 
+        {isInitialLoading ? (
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+            Loading board setup…
+          </div>
+        ) : null}
+
         {gateways.length === 0 ? (
           <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
             <p>
@@ -262,7 +270,11 @@ export default function NewBoardPage() {
             Cancel
           </Button>
           <Button type="submit" disabled={isLoading || !isFormReady}>
-            {isLoading ? "Creating…" : "Create board"}
+            {isInitialLoading
+              ? "Loading board setup…"
+              : isCreating
+                ? "Creating…"
+                : "Create board"}
           </Button>
         </div>
       </form>
