@@ -65,6 +65,32 @@ class MissionControlEventSummary(SQLModel):
     created_at: str | None = None
 
 
+class MissionControlCodexEvent(SQLModel):
+    """Recent Codex/OpenClaw runtime event for a Codex-backed session."""
+
+    type: str
+    summary: str
+    created_at: str | None = None
+    run_id: str | None = None
+    turn_id: str | None = None
+
+
+class MissionControlCodexSession(SQLModel):
+    """Codex app-server session attachment discovered from OpenClaw session state."""
+
+    thread_id: str
+    agent_id: str | None = None
+    session_file: str
+    session_key: str | None = None
+    cwd: str | None = None
+    model: str | None = None
+    model_provider: str | None = None
+    auth_profile_id: str | None = None
+    active: bool = False
+    updated_at: str | None = None
+    recent_events: list[MissionControlCodexEvent] = Field(default_factory=list)
+
+
 class MissionControlTeamOperation(SQLModel):
     """Normalized live team-operation snapshot for one discovered OMX team."""
 
@@ -104,3 +130,4 @@ class MissionControlOperationsResponse(SQLModel):
     summary: dict[str, int] = Field(default_factory=dict)
     teams: list[MissionControlTeamOperation] = Field(default_factory=list)
     gateways: list[MissionControlGatewayRuntime] = Field(default_factory=list)
+    codex_sessions: list[MissionControlCodexSession] = Field(default_factory=list)

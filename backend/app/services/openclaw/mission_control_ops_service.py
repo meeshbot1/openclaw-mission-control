@@ -14,6 +14,8 @@ from app.core.time import utcnow
 from app.models.gateways import Gateway
 from app.schemas.gateway_api import GatewayResolveQuery, GatewayRuntimeOverviewResponse
 from app.schemas.mission_control import (
+    MissionControlCodexEvent,
+    MissionControlCodexSession,
     MissionControlEventSummary,
     MissionControlGatewayRuntime,
     MissionControlMailboxMessage,
@@ -42,6 +44,20 @@ MAX_SCAN_DEPTH = 5
 MAX_RECENT_MESSAGES = 8
 MAX_RECENT_EVENTS = 8
 ACTIVE_WORKER_STATES = {"busy", "working", "in_progress"}
+MAX_CODEX_SESSIONS = 50
+MAX_CODEX_EVENTS = 8
+CODEX_EVENT_TYPES = {
+    "model.completed": "message",
+    "prompt.submitted": "command",
+    "session.ended": "status",
+    "session.started": "status",
+    "tool.call": "tool",
+    "tool.result": "tool",
+    "tool.started": "tool",
+    "tool.completed": "tool",
+    "reasoning.delta": "thinking",
+    "reasoning.summary": "thinking",
+}
 
 
 class MissionControlOperationsService:
@@ -60,6 +76,7 @@ class MissionControlOperationsService:
         )
         scan_roots = self._scan_roots(gateways)
         teams = self._collect_team_operations(scan_roots)
+        codex_sessions = self._collect_codex_sessions(scan_roots)
         gateway_runtimes = await self._gateway_runtimes(
             gateways=gateways,
             organization_id=organization_id,
@@ -78,6 +95,8 @@ class MissionControlOperationsService:
             "workers_active": active_workers,
             "gateways_total": len(gateway_runtimes),
             "gateways_ok": sum(1 for runtime in gateway_runtimes if runtime.ok),
+            "codex_sessions_total": len(codex_sessions),
+            "codex_sessions_active": sum(1 for session in codex_sessions if session.active),
         }
 
         return MissionControlOperationsResponse(
@@ -86,6 +105,7 @@ class MissionControlOperationsService:
             summary=summary,
             teams=teams,
             gateways=gateway_runtimes,
+            codex_sessions=codex_sessions,
         )
 
     def _scan_roots(self, gateways: list[Gateway]) -> list[Path]:
@@ -130,6 +150,214 @@ class MissionControlOperationsService:
                         discovered[key] = team
 
         return sorted(discovered.values(), key=lambda item: (item.team_name, item.state_root))
+
+    def _collect_codex_sessions(self, scan_roots: list[Path]) -> list[MissionControlCodexSession]:
+        discovered: dict[str, MissionControlCodexSession] = {}
+
+        for binding_path in self._discover_codex_binding_paths(scan_roots):
+            binding = self._read_json(binding_path)
+            if not isinstance(binding, dict):
+                continue
+            thread_id = binding.get("threadId")
+            session_file = binding.get("sessionFile")
+            if not isinstance(thread_id, str) or not thread_id.strip():
+                continue
+            if not isinstance(session_file, str) or not session_file.strip():
+                continue
+            session_path = Path(session_file)
+            events = self._codex_events_for_session(session_path)
+            trajectory_path = session_path.with_suffix(session_path.suffix + ".trajectory.jsonl")
+            discovered[thread_id] = MissionControlCodexSession(
+                thread_id=thread_id,
+                agent_id=self._agent_id_from_session_file(session_path),
+                session_file=session_file,
+                session_key=self._session_key_from_trajectory(trajectory_path),
+                cwd=binding.get("cwd") if isinstance(binding.get("cwd"), str) else None,
+                model=binding.get("model") if isinstance(binding.get("model"), str) else None,
+                model_provider=(
+                    binding.get("modelProvider")
+                    if isinstance(binding.get("modelProvider"), str)
+                    else None
+                ),
+                auth_profile_id=(
+                    binding.get("authProfileId")
+                    if isinstance(binding.get("authProfileId"), str)
+                    else None
+                ),
+                active=self._codex_session_active(events),
+                updated_at=(
+                    binding.get("updatedAt")
+                    if isinstance(binding.get("updatedAt"), str)
+                    else None
+                ),
+                recent_events=events,
+            )
+
+        return sorted(
+            discovered.values(),
+            key=self._codex_session_sort_key,
+            reverse=True,
+        )[:MAX_CODEX_SESSIONS]
+
+    def _discover_codex_binding_paths(self, scan_roots: list[Path]) -> list[Path]:
+        paths: dict[str, Path] = {}
+        for scan_root in scan_roots:
+            for root in self._codex_scan_candidates(scan_root):
+                if not root.exists() or not root.is_dir():
+                    continue
+                for current_root, dirnames, filenames in os.walk(root):
+                    current_path = Path(current_root)
+                    try:
+                        depth = len(current_path.relative_to(root).parts)
+                    except ValueError:
+                        depth = 0
+                    if depth > MAX_SCAN_DEPTH:
+                        dirnames[:] = []
+                        continue
+                    dirnames[:] = [name for name in dirnames if name not in IGNORED_SCAN_DIRS]
+                    for filename in filenames:
+                        if filename.endswith(".codex-app-server.json"):
+                            path = current_path / filename
+                            paths[str(path)] = path
+        return sorted(paths.values(), key=lambda path: str(path))
+
+    def _codex_scan_candidates(self, scan_root: Path) -> list[Path]:
+        candidates = [scan_root]
+        if scan_root.name == "projects" and scan_root.parent.name == "workspace":
+            openclaw_root = scan_root.parent.parent
+            candidates.append(openclaw_root / "agents")
+        agents_root = scan_root / "agents"
+        if agents_root.is_dir():
+            candidates.insert(0, agents_root)
+        return list(dict.fromkeys(candidates))
+
+    def _codex_events_for_session(self, session_path: Path) -> list[MissionControlCodexEvent]:
+        trajectory_path = session_path.with_suffix(session_path.suffix + ".trajectory.jsonl")
+        events = self._codex_events_from_trajectory(trajectory_path)
+        if events:
+            return events[:MAX_CODEX_EVENTS]
+        return self._codex_events_from_transcript(session_path)[:MAX_CODEX_EVENTS]
+
+    def _codex_events_from_trajectory(self, path: Path) -> list[MissionControlCodexEvent]:
+        items: list[MissionControlCodexEvent] = []
+        for payload in self._read_json_lines(path):
+            raw_type = payload.get("type")
+            if not isinstance(raw_type, str):
+                continue
+            raw_data = payload.get("data")
+            data: dict[str, Any] = raw_data if isinstance(raw_data, dict) else {}
+            event_type = CODEX_EVENT_TYPES.get(raw_type, raw_type)
+            summary = self._codex_event_summary(raw_type, data)
+            if not summary:
+                continue
+            items.append(
+                MissionControlCodexEvent(
+                    type=event_type,
+                    summary=summary,
+                    created_at=payload.get("ts") if isinstance(payload.get("ts"), str) else None,
+                    run_id=payload.get("runId") if isinstance(payload.get("runId"), str) else None,
+                    turn_id=data.get("turnId") if isinstance(data.get("turnId"), str) else None,
+                )
+            )
+        items.sort(key=lambda item: item.created_at or "", reverse=True)
+        return items
+
+    def _codex_events_from_transcript(self, path: Path) -> list[MissionControlCodexEvent]:
+        items: list[MissionControlCodexEvent] = []
+        for payload in self._read_json_lines(path):
+            message = payload.get("message")
+            if not isinstance(message, dict):
+                continue
+            role = message.get("role")
+            content = message.get("content")
+            summary = self._message_summary(content)
+            if not isinstance(role, str) or not summary:
+                continue
+            items.append(
+                MissionControlCodexEvent(
+                    type="message",
+                    summary=f"{role}: {summary}",
+                    created_at=payload.get("timestamp")
+                    if isinstance(payload.get("timestamp"), str)
+                    else None,
+                )
+            )
+        items.sort(key=lambda item: item.created_at or "", reverse=True)
+        return items
+
+    def _codex_event_summary(self, raw_type: str, data: dict[str, Any]) -> str | None:
+        if raw_type == "prompt.submitted":
+            prompt = data.get("prompt")
+            return f"User prompt: {self._truncate(prompt)}" if isinstance(prompt, str) else None
+        if raw_type == "model.completed":
+            texts = data.get("assistantTexts")
+            if isinstance(texts, list) and texts:
+                first = next((item for item in texts if isinstance(item, str) and item.strip()), None)
+                if first:
+                    return f"Assistant reply: {self._truncate(first)}"
+            usage = data.get("usage")
+            return f"Model completed ({usage})" if usage else "Model completed"
+        if raw_type == "session.started":
+            tool_count = data.get("toolCount")
+            return f"Session started ({tool_count} tools)" if tool_count is not None else "Session started"
+        if raw_type == "session.ended":
+            status = data.get("status")
+            return f"Session ended: {status}" if isinstance(status, str) else "Session ended"
+        return self._truncate(data.get("summary") or data.get("message") or raw_type)
+
+    @staticmethod
+    def _message_summary(content: Any) -> str | None:
+        if isinstance(content, str):
+            return MissionControlOperationsService._truncate(content)
+        if isinstance(content, list):
+            texts = []
+            for item in content:
+                if isinstance(item, dict) and isinstance(item.get("text"), str):
+                    texts.append(item["text"])
+            if texts:
+                return MissionControlOperationsService._truncate(" ".join(texts))
+        return None
+
+    @staticmethod
+    def _truncate(value: Any, max_length: int = 220) -> str | None:
+        if not isinstance(value, str):
+            return None
+        cleaned = " ".join(value.split())
+        if not cleaned:
+            return None
+        return f"{cleaned[: max_length - 1]}…" if len(cleaned) > max_length else cleaned
+
+    @staticmethod
+    def _agent_id_from_session_file(session_path: Path) -> str | None:
+        parts = session_path.parts
+        if "agents" not in parts:
+            return None
+        index = parts.index("agents")
+        if index + 1 >= len(parts):
+            return None
+        return parts[index + 1]
+
+    def _session_key_from_trajectory(self, path: Path) -> str | None:
+        for payload in self._read_json_lines(path):
+            session_key = payload.get("sessionKey")
+            if isinstance(session_key, str) and session_key.strip():
+                return session_key.strip()
+        return None
+
+    @staticmethod
+    def _codex_session_sort_key(item: MissionControlCodexSession) -> str:
+        if item.updated_at:
+            return item.updated_at
+        if item.recent_events:
+            return item.recent_events[0].created_at or ""
+        return ""
+
+    @staticmethod
+    def _codex_session_active(events: list[MissionControlCodexEvent]) -> bool:
+        if not events:
+            return False
+        latest = events[0]
+        return latest.type != "status" or "ended" not in latest.summary.lower()
 
     def _discover_state_roots(self, scan_root: Path) -> list[tuple[Path, Path]]:
         if not scan_root.exists() or not scan_root.is_dir():
@@ -489,3 +717,23 @@ class MissionControlOperationsService:
             return json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             return None
+
+    def _read_json_lines(self, path: Path) -> list[dict[str, Any]]:
+        if not path.is_file():
+            return []
+        items: list[dict[str, Any]] = []
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            return []
+        for raw_line in lines:
+            line = raw_line.strip()
+            if not line:
+                continue
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict):
+                items.append(payload)
+        return items

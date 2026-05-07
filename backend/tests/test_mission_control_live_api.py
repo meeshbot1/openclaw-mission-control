@@ -178,6 +178,100 @@ def _write_team_state(
     )
 
 
+def _write_codex_session(root: Path) -> None:
+    session_dir = root / "agents" / "codex-proxy-mission-control" / "sessions"
+    session_dir.mkdir(parents=True, exist_ok=True)
+    session_file = session_dir / "session-1-topic-3.jsonl"
+    trajectory_file = session_dir / "session-1-topic-3.jsonl.trajectory.jsonl"
+    binding_file = session_dir / "session-1-topic-3.jsonl.codex-app-server.json"
+    session_file.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "type": "message",
+                        "timestamp": "2026-05-06T01:14:00Z",
+                        "message": {"role": "user", "content": "What is your CWD?"},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "type": "message",
+                        "timestamp": "2026-05-06T01:14:02Z",
+                        "message": {
+                            "role": "assistant",
+                            "content": [{"type": "text", "text": "/workspace/project"}],
+                        },
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    trajectory_file.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "type": "session.started",
+                        "ts": "2026-05-06T01:13:55Z",
+                        "sessionKey": "agent:codex-proxy-mission-control:telegram:topic:3",
+                        "runId": "run-1",
+                        "data": {
+                            "threadId": "thread-1",
+                            "toolCount": 11,
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "type": "prompt.submitted",
+                        "ts": "2026-05-06T01:14:00Z",
+                        "sessionKey": "agent:codex-proxy-mission-control:telegram:topic:3",
+                        "runId": "run-1",
+                        "data": {
+                            "threadId": "thread-1",
+                            "turnId": "turn-1",
+                            "prompt": "What is your CWD?",
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "type": "model.completed",
+                        "ts": "2026-05-06T01:14:02Z",
+                        "sessionKey": "agent:codex-proxy-mission-control:telegram:topic:3",
+                        "runId": "run-1",
+                        "data": {
+                            "threadId": "thread-1",
+                            "turnId": "turn-1",
+                            "assistantTexts": ["/workspace/project"],
+                        },
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    binding_file.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "sessionFile": str(session_file),
+                "threadId": "thread-1",
+                "cwd": "/workspace/project",
+                "authProfileId": "openai-codex:operator@example.com",
+                "model": "gpt-5.5",
+                "modelProvider": "openai",
+                "updatedAt": "2026-05-06T01:14:02Z",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
 @pytest.mark.asyncio
 async def test_mission_control_live_operations_returns_team_and_gateway_data(
     monkeypatch: pytest.MonkeyPatch,
@@ -199,6 +293,7 @@ async def test_mission_control_live_operations_returns_team_and_gateway_data(
         worker_name="worker-1",
         message_body="Gateway runtime issue acknowledged",
     )
+    _write_codex_session(gateway_root)
     _write_team_state(
         extra_project_root,
         team_name="project-team",
@@ -254,6 +349,8 @@ async def test_mission_control_live_operations_returns_team_and_gateway_data(
         body = response.json()
         assert body["summary"]["teams_total"] == 2
         assert body["summary"]["workers_active"] == 2
+        assert body["summary"]["codex_sessions_total"] == 1
+        assert body["summary"]["codex_sessions_active"] == 1
         assert body["summary"]["gateways_total"] == 1
         assert set(body["scanned_roots"]) == {str(gateway_root), str(extra_project_root)}
         team_names = {team["team_name"] for team in body["teams"]}
@@ -269,6 +366,15 @@ async def test_mission_control_live_operations_returns_team_and_gateway_data(
         assert gateway_runtime["ok"] is True
         assert gateway_runtime["summary"]["agents_total"] == 1
         assert gateway_runtime["agents"][0]["working_on"] == "Watching team health"
+
+        codex_session = body["codex_sessions"][0]
+        assert codex_session["thread_id"] == "thread-1"
+        assert codex_session["agent_id"] == "codex-proxy-mission-control"
+        assert codex_session["cwd"] == "/workspace/project"
+        assert codex_session["model"] == "gpt-5.5"
+        assert codex_session["session_key"] == "agent:codex-proxy-mission-control:telegram:topic:3"
+        assert codex_session["recent_events"][0]["type"] == "message"
+        assert codex_session["recent_events"][0]["summary"] == "Assistant reply: /workspace/project"
     finally:
         monkeypatch.delenv("MISSION_CONTROL_PROJECT_WORKSPACE_ROOTS", raising=False)
         await engine.dispose()

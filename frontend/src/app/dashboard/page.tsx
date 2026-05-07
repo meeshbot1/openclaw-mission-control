@@ -182,6 +182,28 @@ type MissionControlEventSummary = {
   created_at?: string | null;
 };
 
+type MissionControlCodexEvent = {
+  type: string;
+  summary: string;
+  created_at?: string | null;
+  run_id?: string | null;
+  turn_id?: string | null;
+};
+
+type MissionControlCodexSession = {
+  thread_id: string;
+  agent_id?: string | null;
+  session_file: string;
+  session_key?: string | null;
+  cwd?: string | null;
+  model?: string | null;
+  model_provider?: string | null;
+  auth_profile_id?: string | null;
+  active: boolean;
+  updated_at?: string | null;
+  recent_events: MissionControlCodexEvent[];
+};
+
 type MissionControlTeamOperation = {
   team_name: string;
   task?: string | null;
@@ -215,6 +237,7 @@ type MissionControlOperationsResponse = {
   summary: Record<string, number>;
   teams: MissionControlTeamOperation[];
   gateways: MissionControlGatewayRuntime[];
+  codex_sessions: MissionControlCodexSession[];
 };
 
 const DASH = "—";
@@ -385,6 +408,16 @@ const statusToneClass = (status: string | null | undefined): string => {
 
 const formatStatusLabel = (status: string | null | undefined): string =>
   (status ?? "unknown").replace(/_/g, " ");
+
+const codexEventToneClass = (type: string): string => {
+  const normalized = type.toLowerCase();
+  if (normalized === "thinking") return "bg-violet-100 text-violet-700";
+  if (normalized === "tool") return "bg-blue-100 text-blue-700";
+  if (normalized === "command") return "bg-amber-100 text-amber-700";
+  if (normalized === "error") return "bg-rose-100 text-rose-700";
+  if (normalized === "message") return "bg-emerald-100 text-emerald-700";
+  return "bg-slate-200 text-slate-700";
+};
 
 const toSessionSummaries = (
   sessions: unknown[] | null | undefined,
@@ -1107,6 +1140,20 @@ export default function DashboardPage() {
   const liveWorkersActive = liveOperationsSummary.workers_active ?? 0;
   const liveGatewaysOk = liveOperationsSummary.gateways_ok ?? 0;
   const liveGatewaysTotal = liveOperationsSummary.gateways_total ?? 0;
+  const liveCodexSessions = useMemo(
+    () =>
+      [...(liveOperations?.codex_sessions ?? [])].sort((left, right) => {
+        const leftTime = left.updated_at ?? left.recent_events[0]?.created_at ?? "";
+        const rightTime = right.updated_at ?? right.recent_events[0]?.created_at ?? "";
+        return rightTime.localeCompare(leftTime) || left.thread_id.localeCompare(right.thread_id);
+      }),
+    [liveOperations],
+  );
+  const visibleCodexSessions = liveCodexSessions.slice(0, 4);
+  const liveCodexSessionsTotal = liveOperationsSummary.codex_sessions_total ?? liveCodexSessions.length;
+  const liveCodexSessionsActive =
+    liveOperationsSummary.codex_sessions_active ??
+    liveCodexSessions.filter((session) => session.active).length;
 
   const gatewayStatusLabel = !hasConfiguredGateways
     ? "Not configured"
@@ -1465,7 +1512,7 @@ export default function DashboardPage() {
                 </span>
               </div>
 
-              <div className="grid gap-3 md:grid-cols-4">
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Codex teams
@@ -1501,6 +1548,17 @@ export default function DashboardPage() {
                 </div>
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Codex threads
+                  </p>
+                  <p className="mt-2 text-2xl font-semibold text-slate-900">
+                    {formatCount(liveCodexSessionsTotal)}
+                  </p>
+                  <p className="mt-1 text-sm text-slate-600">
+                    {formatCount(liveCodexSessionsActive)} active
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Scan roots
                   </p>
                   <p className="mt-2 text-2xl font-semibold text-slate-900">
@@ -1512,6 +1570,102 @@ export default function DashboardPage() {
                       : "Awaiting first scan"}
                   </p>
                 </div>
+              </div>
+
+              <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">
+                      Codex session monitor
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      App-server thread attachments, recent prompts, replies, and runtime events.
+                    </p>
+                  </div>
+                  <span className="text-xs text-slate-500">
+                    {formatCount(liveCodexSessionsTotal)} total
+                  </span>
+                </div>
+                {visibleCodexSessions.length > 0 ? (
+                  <div className="grid gap-3 xl:grid-cols-2">
+                    {visibleCodexSessions.map((session) => (
+                      <div
+                        key={`${session.session_file}:${session.thread_id}`}
+                        className="min-w-0 rounded-lg border border-slate-200 bg-white p-3"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-slate-900">
+                              {session.agent_id ?? "Codex session"}
+                            </p>
+                            <p className="mt-0.5 truncate font-mono text-[11px] text-slate-500">
+                              {session.thread_id}
+                            </p>
+                          </div>
+                          <span
+                            className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                              session.active
+                                ? "bg-blue-100 text-blue-700"
+                                : "bg-slate-200 text-slate-700"
+                            }`}
+                          >
+                            {session.active ? "active" : "idle"}
+                          </span>
+                        </div>
+                        <div className="mt-2 grid gap-1 text-xs text-slate-600">
+                          <p className="truncate">
+                            <span className="font-medium text-slate-700">Workspace:</span>{" "}
+                            {session.cwd || DASH}
+                          </p>
+                          <p className="truncate">
+                            <span className="font-medium text-slate-700">Model:</span>{" "}
+                            {[session.model_provider, session.model].filter(Boolean).join("/") ||
+                              session.model ||
+                              DASH}
+                          </p>
+                          <p className="truncate">
+                            <span className="font-medium text-slate-700">Session:</span>{" "}
+                            {session.session_key || session.session_file}
+                          </p>
+                        </div>
+                        <div className="mt-3 space-y-2">
+                          {session.recent_events.length > 0 ? (
+                            session.recent_events.slice(0, 3).map((event, index) => (
+                              <div
+                                key={`${session.thread_id}:${event.type}:${event.created_at ?? index}`}
+                                className="rounded-md bg-slate-50 px-3 py-2"
+                              >
+                                <div className="mb-1 flex items-center justify-between gap-2">
+                                  <span
+                                    className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${codexEventToneClass(event.type)}`}
+                                  >
+                                    {event.type}
+                                  </span>
+                                  <span className="shrink-0 text-[11px] text-slate-500">
+                                    {event.created_at
+                                      ? formatRelativeTimestamp(event.created_at)
+                                      : DASH}
+                                  </span>
+                                </div>
+                                <p className="line-clamp-2 text-xs text-slate-700">
+                                  {event.summary}
+                                </p>
+                              </div>
+                            ))
+                          ) : (
+                            <p className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                              No recent Codex events found for this attachment.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-md bg-white px-3 py-2 text-sm text-slate-500">
+                    No Codex app-server session attachments found in configured gateway workspaces.
+                  </div>
+                )}
               </div>
 
               <div className="mt-4 space-y-3">
