@@ -58,10 +58,12 @@ export default function OnboardingPage() {
     },
   });
 
-  const isLoading = meQuery.isLoading || updateMeMutation.isPending;
+  const profile = meQuery.data?.status === 200 ? meQuery.data.data : null;
+  const isProfileLoading = meQuery.isLoading && !profile;
+  const isSaving = updateMeMutation.isPending;
+  const isLoading = isProfileLoading || isSaving;
   const loadError = meQuery.error?.message ?? null;
   const errorMessage = error ?? loadError;
-  const profile = meQuery.data?.status === 200 ? meQuery.data.data : null;
 
   const clerkFallbackName =
     user?.fullName ?? user?.firstName ?? user?.username ?? "";
@@ -185,6 +187,12 @@ export default function OnboardingPage() {
                   </div>
                 </div>
 
+                {isProfileLoading ? (
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+                    Loading your profile…
+                  </div>
+                ) : null}
+
                 <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800 flex items-start gap-3">
                   <Info className="mt-0.5 h-4 w-4 text-blue-600" />
                   <p>
@@ -206,7 +214,11 @@ export default function OnboardingPage() {
                     disabled={isLoading || requiredMissing}
                   >
                     <Save className="h-4 w-4" />
-                    {isLoading ? "Saving…" : "Save Profile"}
+                    {isProfileLoading
+                      ? "Loading profile…"
+                      : isSaving
+                        ? "Saving…"
+                        : "Save Profile"}
                   </Button>
                   <button
                     type="button"
