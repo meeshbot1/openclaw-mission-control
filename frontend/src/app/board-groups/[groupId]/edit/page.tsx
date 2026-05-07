@@ -149,11 +149,13 @@ export default function EditBoardGroupPage() {
       },
     });
 
-  const isGroupSaving = groupQuery.isLoading || updateMutation.isPending;
+  const isInitialGroupLoading = groupQuery.isLoading && !baseGroup;
   const boardsLoading = allBoardsQuery.isLoading || groupBoardsQuery.isLoading;
   const boardsError = groupBoardsQuery.error ?? allBoardsQuery.error ?? null;
-  const isBoardsBusy = boardsLoading || isAssignmentsSaving;
-  const isLoading = isGroupSaving || isBoardsBusy;
+  const isInitialBoardsLoading = boardsLoading && boards.length === 0;
+  const isInitialLoading = isInitialGroupLoading || isInitialBoardsLoading;
+  const isSaving = updateMutation.isPending || isAssignmentsSaving;
+  const isLoading = isInitialLoading || isSaving;
   const errorMessage = error ?? groupQuery.error?.message ?? null;
   const isFormReady = Boolean(resolvedName.trim());
 
@@ -428,6 +430,12 @@ export default function EditBoardGroupPage() {
           ) : null}
         </div>
 
+        {isInitialLoading ? (
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+            Loading group setup…
+          </div>
+        ) : null}
+
         {errorMessage ? (
           <p className="text-sm text-red-500">{errorMessage}</p>
         ) : null}
@@ -445,7 +453,11 @@ export default function EditBoardGroupPage() {
             type="submit"
             disabled={isLoading || !baseGroup || !isFormReady}
           >
-            {isLoading ? "Saving…" : "Save changes"}
+            {isInitialLoading
+              ? "Loading group setup…"
+              : isSaving
+                ? "Saving…"
+                : "Save changes"}
           </Button>
         </div>
       </form>
