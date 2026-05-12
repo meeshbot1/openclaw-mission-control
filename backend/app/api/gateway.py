@@ -72,7 +72,7 @@ async def gateways_status(
 
 @router.get("/sessions", response_model=GatewaySessionsResponse)
 async def list_gateway_sessions(
-    board_id: str | None = BOARD_ID_QUERY,
+    params: GatewayResolveQuery = RESOLVE_INPUT_DEP,
     session: AsyncSession = SESSION_DEP,
     auth: AuthContext = AUTH_DEP,
     ctx: OrganizationContext = ORG_ADMIN_DEP,
@@ -80,7 +80,7 @@ async def list_gateway_sessions(
     """List sessions for a gateway associated with a board."""
     service = GatewaySessionService(session)
     return await service.get_sessions(
-        board_id=board_id,
+        params=params,
         organization_id=ctx.organization.id,
         user=auth.user,
     )
@@ -89,7 +89,7 @@ async def list_gateway_sessions(
 @router.get("/sessions/{session_id}", response_model=GatewaySessionResponse)
 async def get_gateway_session(
     session_id: str,
-    board_id: str | None = BOARD_ID_QUERY,
+    params: GatewayResolveQuery = RESOLVE_INPUT_DEP,
     session: AsyncSession = SESSION_DEP,
     auth: AuthContext = AUTH_DEP,
     ctx: OrganizationContext = ORG_ADMIN_DEP,
@@ -98,7 +98,7 @@ async def get_gateway_session(
     service = GatewaySessionService(session)
     return await service.get_session(
         session_id=session_id,
-        board_id=board_id,
+        params=params,
         organization_id=ctx.organization.id,
         user=auth.user,
     )
@@ -107,7 +107,7 @@ async def get_gateway_session(
 @router.get("/sessions/{session_id}/history", response_model=GatewaySessionHistoryResponse)
 async def get_session_history(
     session_id: str,
-    board_id: str | None = BOARD_ID_QUERY,
+    params: GatewayResolveQuery = RESOLVE_INPUT_DEP,
     session: AsyncSession = SESSION_DEP,
     auth: AuthContext = AUTH_DEP,
     ctx: OrganizationContext = ORG_ADMIN_DEP,
@@ -116,7 +116,7 @@ async def get_session_history(
     service = GatewaySessionService(session)
     return await service.get_session_history(
         session_id=session_id,
-        board_id=board_id,
+        params=params,
         organization_id=ctx.organization.id,
         user=auth.user,
     )

@@ -689,7 +689,11 @@ class MissionControlOperationsService:
                 continue
             params = GatewayResolveQuery(
                 gateway_url=gateway_url,
-                gateway_token=(gateway.token or "").strip() or None,
+                gateway_token=(
+                    None
+                    if service._env_gateway_token_for_url(gateway_url)
+                    else (gateway.token or "").strip() or None
+                ),
                 gateway_allow_insecure_tls=gateway.allow_insecure_tls,
                 gateway_disable_device_pairing=gateway.disable_device_pairing,
             )

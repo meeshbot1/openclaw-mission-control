@@ -5,6 +5,7 @@ This folder is the documentation home for **OpenClaw Mission Control**.
 ## Start here
 
 - [Mission Control platform manual](./platform/README.md)
+- [Mission Control UI tutorial](./tutorials/mission-control-ui.md)
 - [Getting started](./getting-started/README.md)
 - [Architecture](./architecture/README.md)
 - [Development](./development/README.md)

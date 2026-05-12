@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useMemo } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 
 import { useAuth } from "@/auth/clerk";
@@ -43,6 +43,7 @@ export default function GatewayCronDashboardPage() {
   const params = useParams();
   const { isSignedIn } = useAuth();
   const { isAdmin } = useOrganizationMembership(isSignedIn);
+  const [selectedCronId, setSelectedCronId] = useState<string | null>(null);
 
   const gatewayIdParam = params?.gatewayId;
   const gatewayId = Array.isArray(gatewayIdParam)
@@ -64,7 +65,6 @@ export default function GatewayCronDashboardPage() {
   const statusParams = gateway
     ? {
         gateway_url: gateway.url,
-        gateway_token: gateway.token ?? undefined,
         gateway_disable_device_pairing: gateway.disable_device_pairing,
         gateway_allow_insecure_tls: gateway.allow_insecure_tls,
       }
@@ -84,9 +84,6 @@ export default function GatewayCronDashboardPage() {
       const params = new URLSearchParams();
       if (statusParams.gateway_url) {
         params.set("gateway_url", statusParams.gateway_url);
-      }
-      if (statusParams.gateway_token) {
-        params.set("gateway_token", statusParams.gateway_token);
       }
       if (typeof statusParams.gateway_disable_device_pairing === "boolean") {
         params.set(
@@ -215,48 +212,102 @@ export default function GatewayCronDashboardPage() {
                       <th className="px-3 py-2">Status</th>
                       <th className="px-3 py-2">Next run</th>
                       <th className="px-3 py-2">Target</th>
+                      <th className="px-3 py-2">Details</th>
                     </tr>
                   </thead>
                   <tbody>
                     {cronRecords.map((cron) => (
-                      <tr key={cron.id} className="border-t border-slate-100">
-                        <td className="px-3 py-2 font-medium text-slate-900">
-                          {cron.name}
-                        </td>
-                        <td className="max-w-[26rem] truncate px-3 py-2 text-slate-600">
-                          {cron.purpose}
-                        </td>
-                        <td className="px-3 py-2 font-mono text-xs text-slate-700">
-                          {cron.timezone
-                            ? `${cron.schedule} (${cron.timezone})`
-                            : cron.schedule}
-                        </td>
-                        <td className="px-3 py-2">{cron.enabledLabel}</td>
-                        <td className="px-3 py-2 text-slate-600">
-                          {cron.agentId ?? "—"}
-                        </td>
-                        <td className="px-3 py-2 text-slate-600">
-                          {cron.model ?? "—"}
-                        </td>
-                        <td className="px-3 py-2 text-slate-600">
-                          {formatMs(cron.lastRunAtMs)}
-                        </td>
-                        <td className="px-3 py-2">
-                          <span
-                            className={`rounded-full px-2 py-1 text-xs font-medium ${statusPillClass(
-                              cron.lastRunStatus,
-                            )}`}
-                          >
-                            {cron.lastRunStatus ?? "—"}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2 text-slate-600">
-                          {formatMs(cron.nextRunAtMs)}
-                        </td>
-                        <td className="max-w-[20rem] truncate px-3 py-2 text-slate-600">
-                          {cron.target}
-                        </td>
-                      </tr>
+                      <Fragment key={cron.id}>
+                        <tr className="border-t border-slate-100">
+                          <td className="px-3 py-2 font-medium text-slate-900">
+                            {cron.name}
+                          </td>
+                          <td className="max-w-[26rem] truncate px-3 py-2 text-slate-600">
+                            {cron.purpose}
+                          </td>
+                          <td className="px-3 py-2 font-mono text-xs text-slate-700">
+                            {cron.timezone
+                              ? `${cron.schedule} (${cron.timezone})`
+                              : cron.schedule}
+                          </td>
+                          <td className="px-3 py-2">{cron.enabledLabel}</td>
+                          <td className="px-3 py-2 text-slate-600">
+                            {cron.agentId ?? "—"}
+                          </td>
+                          <td className="px-3 py-2 text-slate-600">
+                            {cron.model ?? "—"}
+                          </td>
+                          <td className="px-3 py-2 text-slate-600">
+                            {formatMs(cron.lastRunAtMs)}
+                          </td>
+                          <td className="px-3 py-2">
+                            <span
+                              className={`rounded-full px-2 py-1 text-xs font-medium ${statusPillClass(
+                                cron.lastRunStatus,
+                              )}`}
+                            >
+                              {cron.lastRunStatus ?? "—"}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-slate-600">
+                            {formatMs(cron.nextRunAtMs)}
+                          </td>
+                          <td className="max-w-[20rem] truncate px-3 py-2 text-slate-600">
+                            {cron.target}
+                          </td>
+                          <td className="px-3 py-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() =>
+                                setSelectedCronId(
+                                  selectedCronId === cron.id ? null : cron.id,
+                                )
+                              }
+                            >
+                              {selectedCronId === cron.id ? "Hide" : "Inspect"}
+                            </Button>
+                          </td>
+                        </tr>
+                        {selectedCronId === cron.id ? (
+                          <tr className="border-t border-slate-100 bg-slate-50">
+                            <td colSpan={11} className="px-3 py-3">
+                              <div className="grid gap-3 text-sm text-slate-700 md:grid-cols-3">
+                                <div>
+                                  <p className="text-xs uppercase text-slate-500">
+                                    Schedule
+                                  </p>
+                                  <p className="mt-1 font-mono text-xs">
+                                    {cron.timezone
+                                      ? `${cron.schedule} (${cron.timezone})`
+                                      : cron.schedule}
+                                  </p>
+                                </div>
+                                <div>
+                                  <p className="text-xs uppercase text-slate-500">
+                                    Last run log
+                                  </p>
+                                  <p className="mt-1">
+                                    {cron.lastRunStatus ?? "No status"} ·{" "}
+                                    {formatMs(cron.lastRunAtMs)}
+                                    {cron.lastDurationMs
+                                      ? ` · ${cron.lastDurationMs}ms`
+                                      : ""}
+                                  </p>
+                                </div>
+                                <div>
+                                  <p className="text-xs uppercase text-slate-500">
+                                    Runtime target
+                                  </p>
+                                  <p className="mt-1 break-all font-mono text-xs">
+                                    {cron.target}
+                                  </p>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        ) : null}
+                      </Fragment>
                     ))}
                   </tbody>
                 </table>
@@ -268,4 +319,3 @@ export default function GatewayCronDashboardPage() {
     </DashboardPageLayout>
   );
 }
-

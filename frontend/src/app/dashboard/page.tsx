@@ -360,9 +360,6 @@ const sharesSessionIdentity = (left: string[], right: string[]): boolean =>
 const gatewayQueryParams = (target: GatewayTarget): URLSearchParams => {
   const params = new URLSearchParams();
   params.set("gateway_url", target.gatewayUrl);
-  if (target.gatewayToken) {
-    params.set("gateway_token", target.gatewayToken);
-  }
   params.set("gateway_disable_device_pairing", String(target.disableDevicePairing));
   params.set("gateway_allow_insecure_tls", String(target.allowInsecureTls));
   return params;
@@ -1134,7 +1131,7 @@ export default function DashboardPage() {
       }),
     [liveOperations],
   );
-  const visibleLiveTeams = liveTeams.slice(0, 5);
+  const visibleLiveTeams = liveTeams;
   const liveOperationsSummary = liveOperations?.summary ?? {};
   const liveTaskTotal = liveOperationsSummary.tasks_total ?? 0;
   const liveWorkersTotal = liveOperationsSummary.workers_total ?? 0;
@@ -1150,7 +1147,7 @@ export default function DashboardPage() {
       }),
     [liveOperations],
   );
-  const visibleCodexSessions = liveCodexSessions.slice(0, 4);
+  const visibleCodexSessions = liveCodexSessions;
   const liveCodexSessionsTotal = liveOperationsSummary.codex_sessions_total ?? liveCodexSessions.length;
   const liveCodexSessionsActive =
     liveOperationsSummary.codex_sessions_active ??

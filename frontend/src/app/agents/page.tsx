@@ -86,9 +86,6 @@ type GatewayRuntimeSnapshot = GatewayTarget & {
 const gatewayQueryParams = (target: GatewayTarget): URLSearchParams => {
   const params = new URLSearchParams();
   params.set("gateway_url", target.gatewayUrl);
-  if (target.gatewayToken) {
-    params.set("gateway_token", target.gatewayToken);
-  }
   params.set(
     "gateway_disable_device_pairing",
     String(target.disableDevicePairing),

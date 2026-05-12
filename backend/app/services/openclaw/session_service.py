@@ -446,12 +446,15 @@ class GatewaySessionService(OpenClawDBService):
     async def get_sessions(
         self,
         *,
-        board_id: str | None,
+        params: GatewayResolveQuery,
         organization_id: UUID,
         user: User | None,
     ) -> GatewaySessionsResponse:
-        params = GatewayResolveQuery(board_id=board_id)
-        board, config, main_session = await self.resolve_gateway(params, user=user)
+        board, config, main_session = await self.resolve_gateway(
+            params,
+            user=user,
+            organization_id=organization_id,
+        )
         self._require_same_org(board, organization_id)
         try:
             sessions = await openclaw_call("sessions.list", config=config)
@@ -662,12 +665,15 @@ class GatewaySessionService(OpenClawDBService):
         self,
         *,
         session_id: str,
-        board_id: str | None,
+        params: GatewayResolveQuery,
         organization_id: UUID,
         user: User | None,
     ) -> GatewaySessionResponse:
-        params = GatewayResolveQuery(board_id=board_id)
-        board, config, main_session = await self.resolve_gateway(params, user=user)
+        board, config, main_session = await self.resolve_gateway(
+            params,
+            user=user,
+            organization_id=organization_id,
+        )
         self._require_same_org(board, organization_id)
         try:
             sessions_list = await self.list_sessions(config)
@@ -706,11 +712,15 @@ class GatewaySessionService(OpenClawDBService):
         self,
         *,
         session_id: str,
-        board_id: str | None,
+        params: GatewayResolveQuery,
         organization_id: UUID,
         user: User | None,
     ) -> GatewaySessionHistoryResponse:
-        board, config, _ = await self.require_gateway(board_id, user=user)
+        board, config, _ = await self.resolve_gateway(
+            params,
+            user=user,
+            organization_id=organization_id,
+        )
         self._require_same_org(board, organization_id)
         try:
             history = await get_chat_history(session_id, config=config)

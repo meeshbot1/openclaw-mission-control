@@ -74,6 +74,36 @@ type GatewayRuntimeOverview = {
   edges: GatewayRuntimeEdge[];
 };
 
+type GatewaySessionHistory = {
+  history: unknown[];
+};
+
+const gatewayQueryString = (
+  statusParams: {
+    gateway_url?: string;
+    gateway_disable_device_pairing?: boolean;
+    gateway_allow_insecure_tls?: boolean;
+  },
+): string => {
+  const params = new URLSearchParams();
+  if (statusParams.gateway_url) {
+    params.set("gateway_url", statusParams.gateway_url);
+  }
+  if (typeof statusParams.gateway_disable_device_pairing === "boolean") {
+    params.set(
+      "gateway_disable_device_pairing",
+      String(statusParams.gateway_disable_device_pairing),
+    );
+  }
+  if (typeof statusParams.gateway_allow_insecure_tls === "boolean") {
+    params.set(
+      "gateway_allow_insecure_tls",
+      String(statusParams.gateway_allow_insecure_tls),
+    );
+  }
+  return params.toString();
+};
+
 const runtimeStatusClass = (status: string | null | undefined) => {
   const normalized = (status ?? "").toLowerCase();
   if (normalized === "working") return "bg-amber-100 text-amber-800";
@@ -95,6 +125,7 @@ export default function GatewayDetailPage() {
 
   const { isAdmin } = useOrganizationMembership(isSignedIn);
   const [deleteTarget, setDeleteTarget] = useState<AgentRead | null>(null);
+  const [selectedSessionKey, setSelectedSessionKey] = useState<string | null>(null);
   const agentsKey = getListAgentsApiV1AgentsGetQueryKey(
     gatewayId ? { gateway_id: gatewayId } : undefined,
   );
@@ -190,6 +221,7 @@ export default function GatewayDetailPage() {
   const status =
     statusQuery.data?.status === 200 ? statusQuery.data.data : null;
   const isConnected = status?.connected ?? false;
+  const gatewayRuntimeQueryString = gatewayQueryString(statusParams);
   const cronQuery = useQuery<{ crons: object[] }, ApiError>({
     queryKey: [
       "gateway-crons",
@@ -201,27 +233,11 @@ export default function GatewayDetailPage() {
     enabled: Boolean(isSignedIn && isAdmin && gateway),
     refetchInterval: 30_000,
     queryFn: async () => {
-      const params = new URLSearchParams();
-      if (statusParams.gateway_url) {
-        params.set("gateway_url", statusParams.gateway_url);
-      }
-      if (typeof statusParams.gateway_disable_device_pairing === "boolean") {
-        params.set(
-          "gateway_disable_device_pairing",
-          String(statusParams.gateway_disable_device_pairing),
-        );
-      }
-      if (typeof statusParams.gateway_allow_insecure_tls === "boolean") {
-        params.set(
-          "gateway_allow_insecure_tls",
-          String(statusParams.gateway_allow_insecure_tls),
-        );
-      }
       const response = await customFetch<{
         data: { crons: object[] };
         status: number;
         headers: Headers;
-      }>(`/api/v1/gateways/crons?${params.toString()}`, {
+      }>(`/api/v1/gateways/crons?${gatewayRuntimeQueryString}`, {
         method: "GET",
       });
       return response.data;
@@ -242,29 +258,36 @@ export default function GatewayDetailPage() {
     enabled: Boolean(isSignedIn && isAdmin && gateway),
     refetchInterval: 15_000,
     queryFn: async () => {
-      const params = new URLSearchParams();
-      if (statusParams.gateway_url) {
-        params.set("gateway_url", statusParams.gateway_url);
-      }
-      if (typeof statusParams.gateway_disable_device_pairing === "boolean") {
-        params.set(
-          "gateway_disable_device_pairing",
-          String(statusParams.gateway_disable_device_pairing),
-        );
-      }
-      if (typeof statusParams.gateway_allow_insecure_tls === "boolean") {
-        params.set(
-          "gateway_allow_insecure_tls",
-          String(statusParams.gateway_allow_insecure_tls),
-        );
-      }
       const response = await customFetch<{
         data: GatewayRuntimeOverview;
         status: number;
         headers: Headers;
-      }>(`/api/v1/gateways/runtime-overview?${params.toString()}`, {
+      }>(`/api/v1/gateways/runtime-overview?${gatewayRuntimeQueryString}`, {
         method: "GET",
       });
+      return response.data;
+    },
+  });
+  const sessionHistoryQuery = useQuery<GatewaySessionHistory, ApiError>({
+    queryKey: [
+      "gateway-session-history",
+      gatewayId,
+      selectedSessionKey,
+      gatewayRuntimeQueryString,
+    ],
+    enabled: Boolean(isSignedIn && isAdmin && gateway && selectedSessionKey),
+    refetchInterval: 5_000,
+    queryFn: async () => {
+      const response = await customFetch<{
+        data: GatewaySessionHistory;
+        status: number;
+        headers: Headers;
+      }>(
+        `/api/v1/gateways/sessions/${encodeURIComponent(
+          selectedSessionKey ?? "",
+        )}/history?${gatewayRuntimeQueryString}`,
+        { method: "GET" },
+      );
       return response.data;
     },
   });
@@ -450,6 +473,7 @@ export default function GatewayDetailPage() {
                           <th className="px-3 py-2">Working on</th>
                           <th className="px-3 py-2">With</th>
                           <th className="px-3 py-2">Updated</th>
+                          <th className="px-3 py-2">Logs</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -485,6 +509,15 @@ export default function GatewayDetailPage() {
                                   )
                                 : "—"}
                             </td>
+                            <td className="px-3 py-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setSelectedSessionKey(item.session_key)}
+                              >
+                                View logs
+                              </Button>
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -508,6 +541,7 @@ export default function GatewayDetailPage() {
                               <th className="px-3 py-2">Parent</th>
                               <th className="px-3 py-2">Status</th>
                               <th className="px-3 py-2">Task</th>
+                              <th className="px-3 py-2">Logs</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -533,6 +567,15 @@ export default function GatewayDetailPage() {
                                 </td>
                                 <td className="max-w-[24rem] truncate px-3 py-2 text-slate-700">
                                   {item.label ?? item.working_on ?? "—"}
+                                </td>
+                                <td className="px-3 py-2">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setSelectedSessionKey(item.session_key)}
+                                  >
+                                    View logs
+                                  </Button>
                                 </td>
                               </tr>
                             ))}
@@ -586,6 +629,59 @@ export default function GatewayDetailPage() {
                       </p>
                     )}
                   </div>
+
+                  {selectedSessionKey ? (
+                    <div className="mt-6 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Realtime session logs
+                          </p>
+                          <p className="mt-1 break-all font-mono text-xs text-slate-700">
+                            {selectedSessionKey}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-slate-500">
+                            {sessionHistoryQuery.isFetching
+                              ? "Refreshing…"
+                              : "Auto-refresh 5s"}
+                          </span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setSelectedSessionKey(null)}
+                          >
+                            Close
+                          </Button>
+                        </div>
+                      </div>
+                      {sessionHistoryQuery.error ? (
+                        <p className="mt-3 text-sm text-rose-600">
+                          {sessionHistoryQuery.error.message}
+                        </p>
+                      ) : sessionHistoryQuery.isLoading ? (
+                        <p className="mt-3 text-sm text-slate-500">
+                          Loading session history…
+                        </p>
+                      ) : sessionHistoryQuery.data?.history.length ? (
+                        <div className="mt-3 max-h-96 space-y-2 overflow-y-auto">
+                          {sessionHistoryQuery.data.history.map((entry, index) => (
+                            <pre
+                              key={`${selectedSessionKey}:${index}`}
+                              className="whitespace-pre-wrap break-words rounded-md bg-white p-3 text-xs text-slate-700"
+                            >
+                              {JSON.stringify(entry, null, 2)}
+                            </pre>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="mt-3 text-sm text-slate-500">
+                          No chat history was returned for this runtime session.
+                        </p>
+                      )}
+                    </div>
+                  ) : null}
                 </>
               )}
             </div>
