@@ -317,6 +317,8 @@ describe("/dashboard gateway visibility", () => {
     expect(screen.getByText(/agent-to-agent runtime edges/i)).toBeInTheDocument();
     expect(screen.getByText(/openai-codex\/gpt-5\.4/i)).toBeInTheDocument();
     expect(screen.getByText(/Live Operations/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Auto-refresh 15s/i).length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: /Refresh/i })).toBeInTheDocument();
     expect(screen.getByText(/project-webapp-team/i)).toBeInTheDocument();
     expect(screen.getByText(/Implement landing page/i)).toBeInTheDocument();
     expect(screen.getByText(/%42/i)).toBeInTheDocument();

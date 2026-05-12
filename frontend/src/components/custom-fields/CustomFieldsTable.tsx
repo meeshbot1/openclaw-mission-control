@@ -21,6 +21,8 @@ import { formatCustomFieldDefaultValue } from "./custom-field-form-utils";
 type CustomFieldsTableProps = {
   fields: TaskCustomFieldDefinitionRead[];
   isLoading?: boolean;
+  isRefreshing?: boolean;
+  refreshingLabel?: string;
   sorting?: SortingState;
   onSortingChange?: OnChangeFn<SortingState>;
   stickyHeader?: boolean;
@@ -53,6 +55,8 @@ const DEFAULT_EMPTY_ICON = (
 export function CustomFieldsTable({
   fields,
   isLoading = false,
+  isRefreshing = false,
+  refreshingLabel,
   sorting,
   onSortingChange,
   stickyHeader = false,
@@ -151,6 +155,8 @@ export function CustomFieldsTable({
     <DataTable
       table={table}
       isLoading={isLoading}
+      isRefreshing={isRefreshing}
+      refreshingLabel={refreshingLabel}
       stickyHeader={stickyHeader}
       rowClassName="transition hover:bg-slate-50"
       cellClassName="px-6 py-4 align-top"

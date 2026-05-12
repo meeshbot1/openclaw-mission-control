@@ -24,6 +24,8 @@ type MembersInvitesTableProps = {
   members: OrganizationMemberRead[];
   invites: OrganizationInviteRead[];
   isLoading: boolean;
+  isRefreshing?: boolean;
+  refreshingLabel?: string;
   isAdmin: boolean;
   copiedInviteId: string | null;
   onManageAccess: (memberId: string) => void;
@@ -72,6 +74,8 @@ export function MembersInvitesTable({
   members,
   invites,
   isLoading,
+  isRefreshing = false,
+  refreshingLabel,
   isAdmin,
   copiedInviteId,
   onManageAccess,
@@ -239,6 +243,8 @@ export function MembersInvitesTable({
     <DataTable
       table={table}
       isLoading={isLoading}
+      isRefreshing={isRefreshing}
+      refreshingLabel={refreshingLabel}
       loadingLabel="Loading members..."
       emptyMessage="No members or invites yet."
       headerClassName="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500"

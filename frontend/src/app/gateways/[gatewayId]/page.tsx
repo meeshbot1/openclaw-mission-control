@@ -157,7 +157,6 @@ export default function GatewayDetailPage() {
   const statusParams = gateway
     ? {
         gateway_url: gateway.url,
-        gateway_token: gateway.token ?? undefined,
         gateway_disable_device_pairing: gateway.disable_device_pairing,
         gateway_allow_insecure_tls: gateway.allow_insecure_tls,
       }
@@ -206,9 +205,6 @@ export default function GatewayDetailPage() {
       if (statusParams.gateway_url) {
         params.set("gateway_url", statusParams.gateway_url);
       }
-      if (statusParams.gateway_token) {
-        params.set("gateway_token", statusParams.gateway_token);
-      }
       if (typeof statusParams.gateway_disable_device_pairing === "boolean") {
         params.set(
           "gateway_disable_device_pairing",
@@ -249,9 +245,6 @@ export default function GatewayDetailPage() {
       const params = new URLSearchParams();
       if (statusParams.gateway_url) {
         params.set("gateway_url", statusParams.gateway_url);
-      }
-      if (statusParams.gateway_token) {
-        params.set("gateway_token", statusParams.gateway_token);
       }
       if (typeof statusParams.gateway_disable_device_pairing === "boolean") {
         params.set(
@@ -615,6 +608,7 @@ export default function GatewayDetailPage() {
                   agents={agents}
                   boards={boards}
                   isLoading={agentsQuery.isLoading}
+                  isRefreshing={agentsQuery.isFetching && !agentsQuery.isLoading}
                   onDelete={setDeleteTarget}
                   emptyMessage="No agents assigned to this gateway."
                 />

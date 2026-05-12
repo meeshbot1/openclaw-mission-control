@@ -235,6 +235,7 @@ export default function SkillsPacksPage() {
             <SkillPacksTable
               packs={packs}
               isLoading={packsQuery.isLoading}
+              isRefreshing={packsQuery.isFetching && !packsQuery.isLoading}
               sorting={sorting}
               onSortingChange={onSortingChange}
               stickyHeader

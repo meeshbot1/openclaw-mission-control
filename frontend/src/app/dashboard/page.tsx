@@ -14,6 +14,7 @@ import {
   Bot,
   Info,
   LayoutGrid,
+  RefreshCcw,
   Shield,
   Timer,
 } from "lucide-react";
@@ -962,7 +963,7 @@ export default function DashboardPage() {
   const liveOperationsQuery = useQuery<MissionControlOperationsResponse, ApiError>({
     queryKey: ["dashboard", "mission-control-live-operations"],
     enabled: Boolean(isSignedIn),
-    refetchInterval: 5_000,
+    refetchInterval: 15_000,
     refetchOnMount: "always",
     queryFn: async ({ signal }) => {
       const response = await customFetch<{
@@ -1154,6 +1155,17 @@ export default function DashboardPage() {
   const liveCodexSessionsActive =
     liveOperationsSummary.codex_sessions_active ??
     liveCodexSessions.filter((session) => session.active).length;
+  const runtimeCoverageLoading =
+    gatewayStatusesQuery.isLoading ||
+    gatewayRuntimeQuery.isLoading ||
+    gatewayCronQuery.isLoading;
+  const runtimeCoverageRefreshing =
+    !runtimeCoverageLoading &&
+    (gatewayStatusesQuery.isFetching ||
+      gatewayRuntimeQuery.isFetching ||
+      gatewayCronQuery.isFetching);
+  const liveOperationsRefreshing =
+    !liveOperationsQuery.isLoading && liveOperationsQuery.isFetching;
 
   const gatewayStatusLabel = !hasConfiguredGateways
     ? "Not configured"
@@ -1420,7 +1432,11 @@ export default function DashboardPage() {
                   </p>
                 </div>
                 <span className="text-xs text-slate-500">
-                  Auto-refresh 15s
+                  {runtimeCoverageLoading
+                    ? "Loading live coverage..."
+                    : runtimeCoverageRefreshing
+                      ? "Refreshing..."
+                      : "Auto-refresh 15s"}
                 </span>
               </div>
               <div className="grid gap-3 lg:grid-cols-4">
@@ -1507,9 +1523,31 @@ export default function DashboardPage() {
                     Codex team sessions, task progress, worker panes, and gateway runtime agents.
                   </p>
                 </div>
-                <span className="text-xs text-slate-500">
-                  Auto-refresh 5s
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-500">
+                    {liveOperationsQuery.isLoading
+                      ? "Loading live operations..."
+                      : liveOperationsRefreshing
+                        ? "Refreshing..."
+                        : "Auto-refresh 15s"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void liveOperationsQuery.refetch();
+                    }}
+                    disabled={liveOperationsQuery.isFetching}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <RefreshCcw
+                      className={`h-3.5 w-3.5 ${
+                        liveOperationsQuery.isFetching ? "animate-spin" : ""
+                      }`}
+                      aria-hidden="true"
+                    />
+                    Refresh
+                  </button>
+                </div>
               </div>
 
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">

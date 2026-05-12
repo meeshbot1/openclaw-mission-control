@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from collections import Counter
@@ -46,6 +47,7 @@ MAX_RECENT_EVENTS = 8
 ACTIVE_WORKER_STATES = {"busy", "working", "in_progress"}
 MAX_CODEX_SESSIONS = 50
 MAX_CODEX_EVENTS = 8
+GATEWAY_RUNTIME_TIMEOUT_SECONDS = 3.0
 CODEX_EVENT_TYPES = {
     "model.completed": "message",
     "prompt.submitted": "command",
@@ -166,12 +168,11 @@ class MissionControlOperationsService:
                 continue
             session_path = Path(session_file)
             events = self._codex_events_for_session(session_path)
-            trajectory_path = session_path.with_suffix(session_path.suffix + ".trajectory.jsonl")
             discovered[thread_id] = MissionControlCodexSession(
                 thread_id=thread_id,
                 agent_id=self._agent_id_from_session_file(session_path),
                 session_file=session_file,
-                session_key=self._session_key_from_trajectory(trajectory_path),
+                session_key=self._session_key_for_session(session_path),
                 cwd=binding.get("cwd") if isinstance(binding.get("cwd"), str) else None,
                 model=binding.get("model") if isinstance(binding.get("model"), str) else None,
                 model_provider=(
@@ -232,11 +233,17 @@ class MissionControlOperationsService:
         return list(dict.fromkeys(candidates))
 
     def _codex_events_for_session(self, session_path: Path) -> list[MissionControlCodexEvent]:
-        trajectory_path = session_path.with_suffix(session_path.suffix + ".trajectory.jsonl")
-        events = self._codex_events_from_trajectory(trajectory_path)
-        if events:
-            return events[:MAX_CODEX_EVENTS]
+        for trajectory_path in self._trajectory_path_candidates(session_path):
+            events = self._codex_events_from_trajectory(trajectory_path)
+            if events:
+                return events[:MAX_CODEX_EVENTS]
         return self._codex_events_from_transcript(session_path)[:MAX_CODEX_EVENTS]
+
+    @staticmethod
+    def _trajectory_path_candidates(session_path: Path) -> list[Path]:
+        legacy_path = session_path.with_suffix(session_path.suffix + ".trajectory.jsonl")
+        current_path = session_path.with_suffix(".trajectory.jsonl")
+        return list(dict.fromkeys([legacy_path, current_path]))
 
     def _codex_events_from_trajectory(self, path: Path) -> list[MissionControlCodexEvent]:
         items: list[MissionControlCodexEvent] = []
@@ -337,11 +344,12 @@ class MissionControlOperationsService:
             return None
         return parts[index + 1]
 
-    def _session_key_from_trajectory(self, path: Path) -> str | None:
-        for payload in self._read_json_lines(path):
-            session_key = payload.get("sessionKey")
-            if isinstance(session_key, str) and session_key.strip():
-                return session_key.strip()
+    def _session_key_for_session(self, session_path: Path) -> str | None:
+        for path in self._trajectory_path_candidates(session_path):
+            for payload in self._read_json_lines(path):
+                session_key = payload.get("sessionKey")
+                if isinstance(session_key, str) and session_key.strip():
+                    return session_key.strip()
         return None
 
     @staticmethod
@@ -397,7 +405,7 @@ class MissionControlOperationsService:
         config = self._read_json(team_dir / "config.json")
         tasks = self._task_summaries(team_dir / "tasks")
         monitor = self._read_json(team_dir / "monitor-snapshot.json")
-        workers = self._worker_summaries(team_dir / "workers", monitor)
+        workers = self._worker_summaries(team_dir / "workers", monitor, tasks)
         messages = self._recent_messages(team_dir / "mailbox")
         events = self._recent_events(team_dir / "events" / "events.ndjson")
         counts = self._task_counts(tasks)
@@ -469,6 +477,7 @@ class MissionControlOperationsService:
         self,
         workers_dir: Path,
         monitor_payload: Any,
+        tasks: list[MissionControlTaskSummary],
     ) -> list[MissionControlWorkerStatus]:
         items: list[MissionControlWorkerStatus] = []
         state_by_name: dict[str, Any] = {}
@@ -490,6 +499,7 @@ class MissionControlOperationsService:
             name = identity.get("name")
             if not isinstance(name, str) or not name.strip():
                 continue
+            task_id = self._worker_task_id(name=name, tasks=tasks, task_id_by_name=task_id_by_name)
             items.append(
                 MissionControlWorkerStatus(
                     name=name,
@@ -499,17 +509,19 @@ class MissionControlOperationsService:
                         if isinstance(identity.get("pane_id"), str)
                         else None
                     ),
-                    state=self._worker_state(name=name, status=status, state_by_name=state_by_name),
+                    state=self._worker_state(
+                        name=name,
+                        status=status,
+                        state_by_name=state_by_name,
+                        alive_by_name=alive_by_name,
+                        task_id=task_id,
+                    ),
                     reason=(
                         status.get("reason")
                         if isinstance(status, dict) and isinstance(status.get("reason"), str)
                         else None
                     ),
-                    task_id=(
-                        str(task_id_by_name.get(name)).strip()
-                        if task_id_by_name.get(name) not in {None, ""}
-                        else None
-                    ),
+                    task_id=task_id,
                     alive=bool(alive_by_name.get(name)) if name in alive_by_name else None,
                     updated_at=(
                         status.get("updated_at")
@@ -526,14 +538,33 @@ class MissionControlOperationsService:
         name: str,
         status: Any,
         state_by_name: dict[str, Any],
+        alive_by_name: dict[str, Any],
+        task_id: str | None,
     ) -> str | None:
         if isinstance(status, dict):
             state = status.get("state")
             if isinstance(state, str) and state.strip():
                 return state.strip()
         raw_state = state_by_name.get(name)
-        if isinstance(raw_state, str) and raw_state.strip():
+        if isinstance(raw_state, str) and raw_state.strip() and raw_state.strip().lower() != "unknown":
             return raw_state.strip()
+        if bool(alive_by_name.get(name)) and task_id:
+            return "in_progress"
+        return None
+
+    @staticmethod
+    def _worker_task_id(
+        *,
+        name: str,
+        tasks: list[MissionControlTaskSummary],
+        task_id_by_name: dict[str, Any],
+    ) -> str | None:
+        raw_task_id = task_id_by_name.get(name)
+        if raw_task_id not in {None, ""}:
+            return str(raw_task_id).strip()
+        for task in tasks:
+            if task.owner == name and (task.status or "").strip().lower() == "in_progress":
+                return task.task_id
         return None
 
     def _recent_messages(self, mailbox_dir: Path) -> list[MissionControlMailboxMessage]:
@@ -663,12 +694,29 @@ class MissionControlOperationsService:
                 gateway_disable_device_pairing=gateway.disable_device_pairing,
             )
             try:
-                overview = await service.get_runtime_overview(
-                    params=params,
-                    organization_id=organization_id,
-                    user=None,
+                overview = await asyncio.wait_for(
+                    service.get_runtime_overview(
+                        params=params,
+                        organization_id=organization_id,
+                        user=None,
+                    ),
+                    timeout=GATEWAY_RUNTIME_TIMEOUT_SECONDS,
                 )
                 items.append(self._runtime_from_overview(gateway, workspace_root, overview))
+            except TimeoutError:
+                items.append(
+                    MissionControlGatewayRuntime(
+                        gateway_id=gateway.id,
+                        gateway_name=gateway.name,
+                        gateway_url=gateway_url,
+                        workspace_root=workspace_root,
+                        ok=False,
+                        error=(
+                            "Gateway runtime overview timed out after "
+                            f"{GATEWAY_RUNTIME_TIMEOUT_SECONDS:g}s"
+                        ),
+                    )
+                )
             except HTTPException as exc:
                 items.append(
                     MissionControlGatewayRuntime(

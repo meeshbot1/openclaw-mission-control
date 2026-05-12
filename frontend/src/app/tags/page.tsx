@@ -104,6 +104,7 @@ export default function TagsPage() {
           <TagsTable
             tags={tags}
             isLoading={tagsQuery.isLoading}
+            isRefreshing={tagsQuery.isFetching && !tagsQuery.isLoading}
             sorting={sorting}
             onSortingChange={onSortingChange}
             stickyHeader

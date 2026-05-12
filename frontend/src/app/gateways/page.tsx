@@ -117,6 +117,7 @@ export default function GatewaysPage() {
           <GatewaysTable
             gateways={gateways}
             isLoading={gatewaysQuery.isLoading}
+            isRefreshing={gatewaysQuery.isFetching && !gatewaysQuery.isLoading}
             sorting={sorting}
             onSortingChange={onSortingChange}
             showActions

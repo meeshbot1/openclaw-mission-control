@@ -799,6 +799,10 @@ export default function OrganizationPage() {
                     membersQuery.isLoading ||
                     (isAdmin && invitesQuery.isLoading)
                   }
+                  isRefreshing={
+                    (membersQuery.isFetching || (isAdmin && invitesQuery.isFetching)) &&
+                    !(membersQuery.isLoading || (isAdmin && invitesQuery.isLoading))
+                  }
                   isAdmin={isAdmin}
                   copiedInviteId={copiedInviteId}
                   onManageAccess={openAccessDialog}

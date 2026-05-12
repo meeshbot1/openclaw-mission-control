@@ -1,6 +1,7 @@
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import type { ApprovalRead } from "@/api/generated/model";
@@ -130,5 +131,41 @@ describe("BoardApprovalsPanel", () => {
     expect(
       screen.getByRole("link", { name: "Publish release notes" }),
     ).toHaveAttribute("href", "/boards/board-1?taskId=task-b");
+  });
+
+  it("shows pending decision state for externally controlled approval actions", async () => {
+    const approval = {
+      id: "approval-3",
+      board_id: "board-1",
+      action_type: "task.approve",
+      confidence: 91,
+      status: "pending",
+      task_id: "task-z",
+      created_at: "2026-02-12T12:00:00Z",
+      resolved_at: null,
+      payload: { title: "Approve release" },
+      rubric_scores: null,
+    } as ApprovalRead;
+    const onDecision = vi.fn();
+
+    renderWithQueryClient(
+      <BoardApprovalsPanel
+        boardId="board-1"
+        approvals={[approval]}
+        onDecision={onDecision}
+        pendingApprovalId="approval-3"
+        pendingDecisionStatus="approved"
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Approving…" }),
+    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Reject" })).toBeDisabled();
+    expect(screen.getAllByText(/Approving…/).length).toBeGreaterThan(0);
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Approving…" }));
+    expect(onDecision).not.toHaveBeenCalled();
   });
 });

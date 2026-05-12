@@ -3,10 +3,7 @@
 import { useIsFetching, useIsMutating } from "@tanstack/react-query";
 
 export function GlobalLoader() {
-  const fetchingCount = useIsFetching({
-    predicate: (query) =>
-      query.state.fetchStatus === "fetching" && query.state.data === undefined,
-  });
+  const fetchingCount = useIsFetching();
   const mutatingCount = useIsMutating();
   const visible = fetchingCount + mutatingCount > 0;
 

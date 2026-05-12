@@ -105,6 +105,7 @@ export default function CustomFieldsPage() {
           <CustomFieldsTable
             fields={customFields}
             isLoading={customFieldsQuery.isLoading}
+            isRefreshing={customFieldsQuery.isFetching && !customFieldsQuery.isLoading}
             sorting={sorting}
             onSortingChange={onSortingChange}
             stickyHeader

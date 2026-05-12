@@ -139,6 +139,7 @@ export default function BoardsPage() {
             boards={boards}
             boardGroups={groups}
             isLoading={boardsQuery.isLoading}
+            isRefreshing={(boardsQuery.isFetching || groupsQuery.isFetching) && !(boardsQuery.isLoading || groupsQuery.isLoading)}
             sorting={sorting}
             onSortingChange={onSortingChange}
             showActions

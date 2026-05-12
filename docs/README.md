@@ -4,7 +4,9 @@ This folder is the documentation home for **OpenClaw Mission Control**.
 
 ## Start here
 
+- [Mission Control platform manual](./platform/README.md)
 - [Getting started](./getting-started/README.md)
+- [Architecture](./architecture/README.md)
 - [Development](./development/README.md)
 - [Testing](./testing/README.md)
 - [Deployment](./deployment/README.md)
@@ -20,6 +22,7 @@ This folder is the documentation home for **OpenClaw Mission Control**.
 - [Configuration reference](./reference/configuration.md)
 - [Authentication](./reference/authentication.md)
 - [API notes](./reference/api.md)
+- [Platform manual](./platform/README.md)
 
 ## Contributing to docs
 

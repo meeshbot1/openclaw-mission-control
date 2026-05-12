@@ -115,6 +115,9 @@ function GlobalApprovalsInner() {
         { cache: "no-store" },
       ),
   });
+  const pendingDecision = updateApprovalMutation.isPending
+    ? updateApprovalMutation.variables
+    : null;
 
   const approvals = useMemo(
     () => approvalsQuery.data?.approvals ?? [],
@@ -174,6 +177,8 @@ function GlobalApprovalsInner() {
             boardId="global"
             approvals={approvals}
             isLoading={boardsQuery.isLoading || (hasBoards && approvalsQuery.isLoading)}
+            pendingApprovalId={pendingDecision?.approvalId ?? null}
+            pendingDecisionStatus={pendingDecision?.status ?? null}
             error={combinedError}
             onDecision={handleDecision}
             scrollable

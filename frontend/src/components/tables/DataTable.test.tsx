@@ -32,6 +32,7 @@ type Row = {
 type HarnessProps = {
   rows: Row[];
   isLoading?: boolean;
+  isRefreshing?: boolean;
   emptyMessage?: string;
   emptyState?: React.ComponentProps<typeof DataTable<Row>>["emptyState"];
   rowActions?: React.ComponentProps<typeof DataTable<Row>>["rowActions"];
@@ -40,6 +41,7 @@ type HarnessProps = {
 function DataTableHarness({
   rows,
   isLoading = false,
+  isRefreshing = false,
   emptyMessage,
   emptyState,
   rowActions,
@@ -56,6 +58,7 @@ function DataTableHarness({
     <DataTable
       table={table}
       isLoading={isLoading}
+      isRefreshing={isRefreshing}
       emptyMessage={emptyMessage}
       emptyState={emptyState}
       rowActions={rowActions}
@@ -141,6 +144,18 @@ describe("DataTable", () => {
       />,
     );
     expect(screen.getByText("No rows yet")).toBeInTheDocument();
+  });
+
+  it("renders a background refresh indicator without hiding rows", () => {
+    render(
+      <DataTableHarness
+        rows={[{ id: "row-1", name: "Alpha" }]}
+        isRefreshing={true}
+      />,
+    );
+
+    expect(screen.getByRole("status")).toHaveTextContent("Refreshing…");
+    expect(screen.getByText("Alpha")).toBeInTheDocument();
   });
 
   it("renders custom empty state", () => {

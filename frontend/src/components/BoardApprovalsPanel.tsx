@@ -45,6 +45,8 @@ type BoardApprovalsPanelProps = {
   boardId: string;
   approvals?: ApprovalRead[];
   isLoading?: boolean;
+  pendingApprovalId?: string | null;
+  pendingDecisionStatus?: "approved" | "rejected" | null;
   error?: string | null;
   emptyState?: {
     title: string;
@@ -399,6 +401,8 @@ export function BoardApprovalsPanel({
   boardId,
   approvals: externalApprovals,
   isLoading: externalLoading,
+  pendingApprovalId,
+  pendingDecisionStatus,
   error: externalError,
   emptyState,
   onDecision,
@@ -409,6 +413,9 @@ export function BoardApprovalsPanel({
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [updatingDecisionStatus, setUpdatingDecisionStatus] = useState<
+    "approved" | "rejected" | null
+  >(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const usingExternal = Array.isArray(externalApprovals);
   const approvalsKey = useMemo(
@@ -468,6 +475,7 @@ export function BoardApprovalsPanel({
       if (usingExternal) return;
       if (!isSignedIn || !boardId) return;
       setUpdatingId(approvalId);
+      setUpdatingDecisionStatus(status);
       setError(null);
 
       updateApprovalMutation.mutate(
@@ -496,6 +504,7 @@ export function BoardApprovalsPanel({
           },
           onSettled: () => {
             setUpdatingId(null);
+            setUpdatingDecisionStatus(null);
             queryClient.invalidateQueries({ queryKey: approvalsKey });
           },
         },
@@ -551,6 +560,11 @@ export function BoardApprovalsPanel({
 
   const pendingCount = sortedApprovals.pending.length;
   const resolvedCount = sortedApprovals.resolved.length;
+  const activePendingApprovalId = pendingApprovalId ?? updatingId;
+  const activePendingDecisionStatus =
+    pendingApprovalId !== undefined
+      ? (pendingDecisionStatus ?? null)
+      : updatingDecisionStatus;
 
   return (
     <div className={cn("space-y-6", scrollable && "h-full")}>
@@ -622,6 +636,7 @@ export function BoardApprovalsPanel({
                 );
                 const isSelected = effectiveSelectedId === approval.id;
                 const isPending = approval.status === "pending";
+                const isUpdatingApproval = activePendingApprovalId === approval.id;
                 const titleRow = summary.rows.find(
                   (row) => row.label.toLowerCase() === "title",
                 );
@@ -657,10 +672,16 @@ export function BoardApprovalsPanel({
                       <span
                         className={cn(
                           "rounded-[3px] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em]",
-                          statusBadgeClass(approval.status),
+                          isUpdatingApproval
+                            ? "bg-slate-200 text-slate-700"
+                            : statusBadgeClass(approval.status),
                         )}
                       >
-                        {formatStatusLabel(approval.status)}
+                        {isUpdatingApproval
+                          ? activePendingDecisionStatus === "rejected"
+                            ? "Rejecting"
+                            : "Approving"
+                          : formatStatusLabel(approval.status)}
                       </span>
                     </div>
                     <p className="mt-2 text-sm font-semibold text-slate-900">
@@ -714,6 +735,8 @@ export function BoardApprovalsPanel({
                 const descriptionText = summary.description?.trim() ?? "";
                 const reasoningText = summary.reason?.trim() ?? "";
                 const relatedTasks = approvalRelatedTasks(selectedApproval);
+                const isUpdatingSelectedApproval =
+                  activePendingApprovalId === selectedApproval.id;
                 const extraRows = summary.rows.filter((row) => {
                   const normalized = row.label.toLowerCase();
                   if (normalized === "title") return false;
@@ -793,10 +816,13 @@ export function BoardApprovalsPanel({
                               onClick={() =>
                                 handleDecision(selectedApproval.id, "approved")
                               }
-                              disabled={updatingId === selectedApproval.id}
+                              disabled={isUpdatingSelectedApproval}
                               className="bg-slate-900 text-white hover:bg-slate-800"
                             >
-                              Approve
+                              {isUpdatingSelectedApproval &&
+                              activePendingDecisionStatus !== "rejected"
+                                ? "Approving…"
+                                : "Approve"}
                             </Button>
                             <Button
                               variant="outline"
@@ -804,10 +830,13 @@ export function BoardApprovalsPanel({
                               onClick={() =>
                                 handleDecision(selectedApproval.id, "rejected")
                               }
-                              disabled={updatingId === selectedApproval.id}
+                              disabled={isUpdatingSelectedApproval}
                               className="border-slate-300 text-slate-700 hover:bg-slate-100"
                             >
-                              Reject
+                              {isUpdatingSelectedApproval &&
+                              activePendingDecisionStatus === "rejected"
+                                ? "Rejecting…"
+                                : "Reject"}
                             </Button>
                           </div>
                         ) : null}
@@ -825,10 +854,15 @@ export function BoardApprovalsPanel({
                           Status
                         </p>
                         <p className="text-sm font-medium text-slate-700">
-                          {formatStatusLabel(selectedApproval.status)} ·{" "}
-                          {selectedApproval.status === "pending"
-                            ? "Awaiting your decision"
-                            : "Decision complete"}
+                          {isUpdatingSelectedApproval
+                            ? activePendingDecisionStatus === "rejected"
+                              ? "Rejecting…"
+                              : "Approving…"
+                            : `${formatStatusLabel(selectedApproval.status)} · ${
+                                selectedApproval.status === "pending"
+                                  ? "Awaiting your decision"
+                                  : "Decision complete"
+                              }`}
                         </p>
                       </div>
                     </div>

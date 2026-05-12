@@ -22,6 +22,8 @@ import { truncateText as truncate } from "@/lib/formatters";
 type GatewaysTableProps = {
   gateways: GatewayRead[];
   isLoading?: boolean;
+  isRefreshing?: boolean;
+  refreshingLabel?: string;
   sorting?: SortingState;
   onSortingChange?: OnChangeFn<SortingState>;
   stickyHeader?: boolean;
@@ -54,6 +56,8 @@ const DEFAULT_EMPTY_ICON = (
 export function GatewaysTable({
   gateways,
   isLoading = false,
+  isRefreshing = false,
+  refreshingLabel,
   sorting,
   onSortingChange,
   stickyHeader = false,
@@ -134,6 +138,8 @@ export function GatewaysTable({
     <DataTable
       table={table}
       isLoading={isLoading}
+      isRefreshing={isRefreshing}
+      refreshingLabel={refreshingLabel}
       stickyHeader={stickyHeader}
       emptyMessage={emptyMessage}
       rowActions={

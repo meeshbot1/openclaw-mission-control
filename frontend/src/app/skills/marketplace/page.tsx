@@ -887,6 +887,10 @@ export default function SkillsMarketplacePage() {
                     installedGatewayNamesBySkillId
                   }
                   isLoading={skillsQuery.isLoading}
+                  isRefreshing={
+                    (skillsQuery.isFetching || gatewaysQuery.isFetching || filterOptionSkillsQuery.isFetching || packsQuery.isFetching) &&
+                    !(skillsQuery.isLoading || gatewaysQuery.isLoading || filterOptionSkillsQuery.isLoading || packsQuery.isLoading)
+                  }
                   sorting={sorting}
                   onSortingChange={onSortingChange}
                   stickyHeader

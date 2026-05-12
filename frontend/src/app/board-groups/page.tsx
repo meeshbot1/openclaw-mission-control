@@ -106,6 +106,7 @@ export default function BoardGroupsPage() {
           <BoardGroupsTable
             groups={groups}
             isLoading={groupsQuery.isLoading}
+            isRefreshing={groupsQuery.isFetching && !groupsQuery.isLoading}
             sorting={sorting}
             onSortingChange={onSortingChange}
             showActions

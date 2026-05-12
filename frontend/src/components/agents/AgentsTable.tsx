@@ -32,6 +32,8 @@ type AgentsTableProps = {
   agents: AgentTableRow[];
   boards?: BoardRead[];
   isLoading?: boolean;
+  isRefreshing?: boolean;
+  refreshingLabel?: string;
   sorting?: SortingState;
   onSortingChange?: OnChangeFn<SortingState>;
   showActions?: boolean;
@@ -71,6 +73,8 @@ export function AgentsTable({
   agents,
   boards = [],
   isLoading = false,
+  isRefreshing = false,
+  refreshingLabel,
   sorting,
   onSortingChange,
   showActions = true,
@@ -220,6 +224,8 @@ export function AgentsTable({
     <DataTable
       table={table}
       isLoading={isLoading}
+      isRefreshing={isRefreshing}
+      refreshingLabel={refreshingLabel}
       emptyMessage={emptyMessage}
       stickyHeader={stickyHeader}
       rowActions={

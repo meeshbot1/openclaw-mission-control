@@ -20,6 +20,8 @@ import { dateCell } from "@/components/tables/cell-formatters";
 type TagsTableProps = {
   tags: TagRead[];
   isLoading?: boolean;
+  isRefreshing?: boolean;
+  refreshingLabel?: string;
   sorting?: SortingState;
   onSortingChange?: OnChangeFn<SortingState>;
   stickyHeader?: boolean;
@@ -55,6 +57,8 @@ const normalizeColor = (value?: string | null) => {
 export function TagsTable({
   tags,
   isLoading = false,
+  isRefreshing = false,
+  refreshingLabel,
   sorting,
   onSortingChange,
   stickyHeader = false,
@@ -148,6 +152,8 @@ export function TagsTable({
     <DataTable
       table={table}
       isLoading={isLoading}
+      isRefreshing={isRefreshing}
+      refreshingLabel={refreshingLabel}
       stickyHeader={stickyHeader}
       rowClassName="transition hover:bg-slate-50"
       cellClassName="px-6 py-4 align-top"

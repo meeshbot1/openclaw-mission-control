@@ -83,6 +83,8 @@ class Settings(BaseSettings):
 
     # OpenClaw gateway runtime compatibility
     gateway_min_version: str = "2026.02.9"
+    openclaw_gateway_url: str = ""
+    openclaw_gateway_token: str = ""
 
     # Logging
     log_level: str = "INFO"

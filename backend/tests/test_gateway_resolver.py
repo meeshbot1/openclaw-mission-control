@@ -180,3 +180,27 @@ async def test_resolve_gateway_prefers_explicit_direct_flags_over_saved_settings
     assert config.token == "explicit-token"
     assert config.allow_insecure_tls is False
     assert config.disable_device_pairing is False
+
+
+@pytest.mark.asyncio
+async def test_resolve_gateway_uses_env_token_for_matching_local_gateway(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = GatewaySessionService(session=object())  # type: ignore[arg-type]
+    monkeypatch.setattr(
+        session_service.settings,
+        "openclaw_gateway_url",
+        "http://127.0.0.1:18789",
+    )
+    monkeypatch.setattr(
+        session_service.settings,
+        "openclaw_gateway_token",
+        "env-token",
+    )
+
+    _, config, _ = await service.resolve_gateway(
+        GatewayResolveQuery(gateway_url="ws://127.0.0.1:18789"),
+        user=None,
+    )
+
+    assert config.token == "env-token"

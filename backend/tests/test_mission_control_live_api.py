@@ -21,6 +21,7 @@ from app.models.gateways import Gateway
 from app.models.organization_members import OrganizationMember
 from app.models.organizations import Organization
 from app.schemas.gateway_api import GatewayRuntimeOverviewResponse, GatewayRuntimeSessionStatus
+from app.services.openclaw import mission_control_ops_service as ops_service
 from app.services.openclaw.session_service import GatewaySessionService
 from app.services.organizations import OrganizationContext
 
@@ -89,6 +90,7 @@ def _write_team_state(
     worker_name: str,
     message_body: str,
     worker_state: str = "busy",
+    write_status_file: bool = True,
 ) -> None:
     team_root = root / ".omx" / "state" / "team" / team_name
     (team_root / "tasks").mkdir(parents=True, exist_ok=True)
@@ -137,15 +139,16 @@ def _write_team_state(
         ),
         encoding="utf-8",
     )
-    (team_root / "workers" / worker_name / "status.json").write_text(
-        json.dumps(
-            {
-                "state": worker_state,
-                "updated_at": "2026-05-06T01:11:00Z",
-            }
-        ),
-        encoding="utf-8",
-    )
+    if write_status_file:
+        (team_root / "workers" / worker_name / "status.json").write_text(
+            json.dumps(
+                {
+                    "state": worker_state,
+                    "updated_at": "2026-05-06T01:11:00Z",
+                }
+            ),
+            encoding="utf-8",
+        )
     (team_root / "mailbox" / "leader-fixed.json").write_text(
         json.dumps(
             {
@@ -182,7 +185,7 @@ def _write_codex_session(root: Path) -> None:
     session_dir = root / "agents" / "codex-proxy-mission-control" / "sessions"
     session_dir.mkdir(parents=True, exist_ok=True)
     session_file = session_dir / "session-1-topic-3.jsonl"
-    trajectory_file = session_dir / "session-1-topic-3.jsonl.trajectory.jsonl"
+    trajectory_file = session_dir / "session-1-topic-3.trajectory.jsonl"
     binding_file = session_dir / "session-1-topic-3.jsonl.codex-app-server.json"
     session_file.write_text(
         "\n".join(
@@ -299,7 +302,8 @@ async def test_mission_control_live_operations_returns_team_and_gateway_data(
         team_name="project-team",
         worker_name="worker-2",
         message_body="Project scan complete",
-        worker_state="working",
+        worker_state="unknown",
+        write_status_file=False,
     )
 
     try:
@@ -377,4 +381,72 @@ async def test_mission_control_live_operations_returns_team_and_gateway_data(
         assert codex_session["recent_events"][0]["summary"] == "Assistant reply: /workspace/project"
     finally:
         monkeypatch.delenv("MISSION_CONTROL_PROJECT_WORKSPACE_ROOTS", raising=False)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_mission_control_live_operations_keeps_filesystem_data_when_gateway_times_out(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    engine = await _make_engine()
+    session_maker = async_sessionmaker(
+        engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    gateway_root = tmp_path / "gateway-workspace"
+    gateway_root.mkdir()
+    _write_team_state(
+        gateway_root,
+        team_name="slow-gateway-team",
+        worker_name="worker-1",
+        message_body="Still working",
+        worker_state="unknown",
+        write_status_file=False,
+    )
+    _write_codex_session(gateway_root)
+
+    try:
+        async with session_maker() as session:
+            organization, _gateway = await _seed_base(session, workspace_root=str(gateway_root))
+
+        app = _build_test_app(session_maker, organization=organization)
+        monkeypatch.setattr(ops_service, "GATEWAY_RUNTIME_TIMEOUT_SECONDS", 0.01)
+
+        async def _slow_get_runtime_overview(
+            self: GatewaySessionService,
+            *,
+            params: object,
+            organization_id: object,
+            user: object,
+        ) -> GatewayRuntimeOverviewResponse:
+            del self, params, organization_id, user
+            raise TimeoutError("gateway probe exceeded test timeout")
+
+        monkeypatch.setattr(
+            GatewaySessionService,
+            "get_runtime_overview",
+            _slow_get_runtime_overview,
+        )
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://testserver",
+        ) as client:
+            response = await client.get("/api/v1/gateways/mission-control/live")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["summary"]["teams_total"] == 1
+        assert body["summary"]["workers_active"] == 1
+        assert body["summary"]["codex_sessions_total"] == 1
+        assert body["summary"]["codex_sessions_active"] == 1
+        assert body["summary"]["gateways_total"] == 1
+        assert body["summary"]["gateways_ok"] == 0
+        assert "timed out" in body["gateways"][0]["error"]
+        assert body["codex_sessions"][0]["recent_events"][0]["summary"].startswith(
+            "Assistant reply:"
+        )
+    finally:
         await engine.dispose()

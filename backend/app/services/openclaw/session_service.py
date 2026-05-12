@@ -6,10 +6,12 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from time import time
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 from uuid import UUID
 
 from fastapi import HTTPException, status
 
+from app.core.config import settings
 from app.core.logging import TRACE_LEVEL
 from app.models.boards import Board
 from app.models.gateways import Gateway
@@ -95,6 +97,37 @@ class GatewaySessionService(OpenClawDBService):
         if isinstance(value, Iterable):
             return list(value)
         return []
+
+    @staticmethod
+    def _gateway_url_key(value: str | None) -> tuple[str, str, int | None, str] | None:
+        raw = (value or "").strip()
+        if not raw:
+            return None
+        parsed = urlparse(raw)
+        if not parsed.hostname:
+            return None
+        scheme = parsed.scheme.lower()
+        if scheme == "http":
+            scheme = "ws"
+        elif scheme == "https":
+            scheme = "wss"
+        return (
+            scheme,
+            parsed.hostname.lower(),
+            parsed.port,
+            (parsed.path or "").rstrip("/"),
+        )
+
+    @classmethod
+    def _env_gateway_token_for_url(cls, raw_url: str) -> str | None:
+        token = settings.openclaw_gateway_token.strip()
+        if not token:
+            return None
+        env_key = cls._gateway_url_key(settings.openclaw_gateway_url)
+        raw_key = cls._gateway_url_key(raw_url)
+        if env_key is not None and raw_key == env_key:
+            return token
+        return None
 
     @staticmethod
     def _extract_agent_id(session_key: str | None) -> str | None:
@@ -246,7 +279,11 @@ class GatewaySessionService(OpenClawDBService):
                     status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                     detail="board_id or gateway_url is required",
                 )
-            token = (params.gateway_token or "").strip() or None
+            token = (
+                (params.gateway_token or "").strip()
+                or self._env_gateway_token_for_url(raw_url)
+                or None
+            )
             gateway: Gateway | None = None
             can_query_saved_gateway = organization_id is not None and hasattr(self.session, "exec")
             if can_query_saved_gateway and (

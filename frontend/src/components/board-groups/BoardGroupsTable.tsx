@@ -21,6 +21,8 @@ import { dateCell, linkifyCell } from "@/components/tables/cell-formatters";
 type BoardGroupsTableProps = {
   groups: BoardGroupRead[];
   isLoading?: boolean;
+  isRefreshing?: boolean;
+  refreshingLabel?: string;
   sorting?: SortingState;
   onSortingChange?: OnChangeFn<SortingState>;
   stickyHeader?: boolean;
@@ -56,6 +58,8 @@ const DEFAULT_EMPTY_ICON = (
 export function BoardGroupsTable({
   groups,
   isLoading = false,
+  isRefreshing = false,
+  refreshingLabel,
   sorting,
   onSortingChange,
   stickyHeader = false,
@@ -127,6 +131,8 @@ export function BoardGroupsTable({
     <DataTable
       table={table}
       isLoading={isLoading}
+      isRefreshing={isRefreshing}
+      refreshingLabel={refreshingLabel}
       stickyHeader={stickyHeader}
       emptyMessage={emptyMessage}
       rowClassName="transition hover:bg-slate-50"

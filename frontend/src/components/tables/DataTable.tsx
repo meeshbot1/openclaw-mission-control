@@ -37,7 +37,9 @@ export type DataTableRowActions<TData> = {
 type DataTableProps<TData> = {
   table: Table<TData>;
   isLoading?: boolean;
+  isRefreshing?: boolean;
   loadingLabel?: string;
+  refreshingLabel?: string;
   emptyMessage?: string;
   emptyState?: DataTableEmptyState;
   rowActions?: DataTableRowActions<TData>;
@@ -53,7 +55,9 @@ type DataTableProps<TData> = {
 export function DataTable<TData>({
   table,
   isLoading = false,
+  isRefreshing = false,
   loadingLabel = "Loading…",
+  refreshingLabel = "Refreshing…",
   emptyMessage = "No rows found.",
   emptyState,
   rowActions,
@@ -87,140 +91,153 @@ export function DataTable<TData>({
   const hasRowActions = resolvedRowActions.length > 0;
   const colSpan =
     (table.getVisibleLeafColumns().length || 1) + (hasRowActions ? 1 : 0);
+  const showRefreshing = isRefreshing && !isLoading;
 
   return (
-    <div className="overflow-x-auto">
-      <table className={tableClassName}>
-        <thead
-          className={
-            headerClassName ??
-            `${stickyHeader ? "sticky top-0 z-10 " : ""}bg-slate-50 text-xs font-semibold uppercase tracking-wider text-slate-500`
-          }
-        >
-          {table.getHeaderGroups().map((headerGroup) => (
-            <tr key={headerGroup.id}>
-              {headerGroup.headers.map((header) => (
-                <th key={header.id} className={headerCellClassName}>
-                  {header.isPlaceholder ? null : header.column.getCanSort() ? (
-                    <button
-                      type="button"
-                      onClick={header.column.getToggleSortingHandler()}
-                      className="inline-flex items-center gap-1 text-left"
-                    >
-                      <span>
-                        {flexRender(
-                          header.column.columnDef.header,
-                          header.getContext(),
+    <div className="space-y-2">
+      {showRefreshing ? (
+        <div className="flex justify-end">
+          <p className="px-1 text-xs text-slate-500" role="status" aria-live="polite">
+            {refreshingLabel}
+          </p>
+        </div>
+      ) : null}
+      <div className="overflow-x-auto">
+        <table className={tableClassName}>
+          <thead
+            className={
+              headerClassName ??
+              `${stickyHeader ? "sticky top-0 z-10 " : ""}bg-slate-50 text-xs font-semibold uppercase tracking-wider text-slate-500`
+            }
+          >
+            {table.getHeaderGroups().map((headerGroup) => (
+              <tr key={headerGroup.id}>
+                {headerGroup.headers.map((header) => (
+                  <th key={header.id} className={headerCellClassName}>
+                    {header.isPlaceholder ? null : header.column.getCanSort() ? (
+                      <button
+                        type="button"
+                        onClick={header.column.getToggleSortingHandler()}
+                        className="inline-flex items-center gap-1 text-left"
+                      >
+                        <span>
+                          {flexRender(
+                            header.column.columnDef.header,
+                            header.getContext(),
+                          )}
+                        </span>
+                        {header.column.getIsSorted() === "asc" ? (
+                          "↑"
+                        ) : header.column.getIsSorted() === "desc" ? (
+                          "↓"
+                        ) : (
+                          <span className="text-slate-300">↕</span>
                         )}
-                      </span>
-                      {header.column.getIsSorted() === "asc" ? (
-                        "↑"
-                      ) : header.column.getIsSorted() === "desc" ? (
-                        "↓"
-                      ) : (
-                        <span className="text-slate-300">↕</span>
-                      )}
-                    </button>
-                  ) : (
-                    flexRender(
-                      header.column.columnDef.header,
-                      header.getContext(),
-                    )
-                  )}
-                </th>
-              ))}
-              {hasRowActions ? (
-                <th className={headerCellClassName}>
-                  {rowActions?.header ?? ""}
-                </th>
-              ) : null}
-            </tr>
-          ))}
-        </thead>
-        <tbody className={bodyClassName}>
-          {isLoading ? (
-            <TableLoadingRow colSpan={colSpan} label={loadingLabel} />
-          ) : table.getRowModel().rows.length ? (
-            table.getRowModel().rows.map((row) => (
-              <tr
-                key={row.id}
-                className={
-                  typeof rowClassName === "function"
-                    ? rowClassName(row)
-                    : rowClassName
-                }
-              >
-                {row.getVisibleCells().map((cell) => (
-                  <td key={cell.id} className={cellClassName}>
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </td>
+                      </button>
+                    ) : (
+                      flexRender(
+                        header.column.columnDef.header,
+                        header.getContext(),
+                      )
+                    )}
+                  </th>
                 ))}
                 {hasRowActions ? (
-                  <td className={rowActions?.cellClassName ?? cellClassName}>
-                    <div className="flex justify-end gap-2">
-                      {resolvedRowActions.map((action) => {
-                        if (
-                          action.isVisible &&
-                          !action.isVisible(row.original)
-                        ) {
-                          return null;
-                        }
-                        const href = action.href?.(row.original) ?? null;
-                        if (href) {
-                          return (
-                            <Link
-                              key={action.key}
-                              href={href}
-                              className={
-                                action.className ??
-                                buttonVariants({ variant: "ghost", size: "sm" })
-                              }
-                            >
-                              {action.label}
-                            </Link>
-                          );
-                        }
-                        if (action.onClick) {
-                          return (
-                            <Button
-                              key={action.key}
-                              variant="ghost"
-                              size="sm"
-                              className={action.className}
-                              onClick={() => action.onClick?.(row.original)}
-                            >
-                              {action.label}
-                            </Button>
-                          );
-                        }
-                        return null;
-                      })}
-                    </div>
-                  </td>
+                  <th className={headerCellClassName}>
+                    {rowActions?.header ?? ""}
+                  </th>
                 ) : null}
               </tr>
-            ))
-          ) : emptyState ? (
-            <TableEmptyStateRow
-              colSpan={colSpan}
-              icon={emptyState.icon}
-              title={emptyState.title}
-              description={emptyState.description}
-              actionHref={emptyState.actionHref}
-              actionLabel={emptyState.actionLabel}
-            />
-          ) : (
-            <tr>
-              <td
+            ))}
+          </thead>
+          <tbody className={bodyClassName}>
+            {isLoading ? (
+              <TableLoadingRow colSpan={colSpan} label={loadingLabel} />
+            ) : table.getRowModel().rows.length ? (
+              table.getRowModel().rows.map((row) => (
+                <tr
+                  key={row.id}
+                  className={
+                    typeof rowClassName === "function"
+                      ? rowClassName(row)
+                      : rowClassName
+                  }
+                >
+                  {row.getVisibleCells().map((cell) => (
+                    <td key={cell.id} className={cellClassName}>
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </td>
+                  ))}
+                  {hasRowActions ? (
+                    <td className={rowActions?.cellClassName ?? cellClassName}>
+                      <div className="flex justify-end gap-2">
+                        {resolvedRowActions.map((action) => {
+                          if (
+                            action.isVisible &&
+                            !action.isVisible(row.original)
+                          ) {
+                            return null;
+                          }
+                          const href = action.href?.(row.original) ?? null;
+                          if (href) {
+                            return (
+                              <Link
+                                key={action.key}
+                                href={href}
+                                className={
+                                  action.className ??
+                                  buttonVariants({
+                                    variant: "ghost",
+                                    size: "sm",
+                                  })
+                                }
+                              >
+                                {action.label}
+                              </Link>
+                            );
+                          }
+                          if (action.onClick) {
+                            return (
+                              <Button
+                                key={action.key}
+                                variant="ghost"
+                                size="sm"
+                                className={action.className}
+                                onClick={() => action.onClick?.(row.original)}
+                              >
+                                {action.label}
+                              </Button>
+                            );
+                          }
+                          return null;
+                        })}
+                      </div>
+                    </td>
+                  ) : null}
+                </tr>
+              ))
+            ) : emptyState ? (
+              <TableEmptyStateRow
                 colSpan={colSpan}
-                className="px-6 py-8 text-sm text-slate-500"
-              >
-                {emptyMessage}
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+                icon={emptyState.icon}
+                title={emptyState.title}
+                description={emptyState.description}
+                actionHref={emptyState.actionHref}
+                actionLabel={emptyState.actionLabel}
+              />
+            ) : (
+              <tr>
+                <td
+                  colSpan={colSpan}
+                  className="px-6 py-8 text-sm text-slate-500"
+                >
+                  {emptyMessage}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

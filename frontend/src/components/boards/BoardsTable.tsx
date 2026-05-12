@@ -22,6 +22,8 @@ type BoardsTableProps = {
   boards: BoardRead[];
   boardGroups?: BoardGroupRead[];
   isLoading?: boolean;
+  isRefreshing?: boolean;
+  refreshingLabel?: string;
   sorting?: SortingState;
   onSortingChange?: OnChangeFn<SortingState>;
   stickyHeader?: boolean;
@@ -60,6 +62,8 @@ export function BoardsTable({
   boards,
   boardGroups = [],
   isLoading = false,
+  isRefreshing = false,
+  refreshingLabel,
   sorting,
   onSortingChange,
   stickyHeader = false,
@@ -159,6 +163,8 @@ export function BoardsTable({
     <DataTable
       table={table}
       isLoading={isLoading}
+      isRefreshing={isRefreshing}
+      refreshingLabel={refreshingLabel}
       stickyHeader={stickyHeader}
       emptyMessage={emptyMessage}
       rowClassName="transition hover:bg-slate-50"

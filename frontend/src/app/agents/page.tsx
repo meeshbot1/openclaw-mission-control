@@ -409,6 +409,10 @@ export default function AgentsPage() {
               gatewaysQuery.isLoading ||
               gatewayRuntimeQuery.isLoading
             }
+            isRefreshing={
+              (agentsQuery.isFetching || gatewaysQuery.isFetching || gatewayRuntimeQuery.isFetching) &&
+              !(agentsQuery.isLoading || gatewaysQuery.isLoading || gatewayRuntimeQuery.isLoading)
+            }
             sorting={sorting}
             onSortingChange={onSortingChange}
             showActions
