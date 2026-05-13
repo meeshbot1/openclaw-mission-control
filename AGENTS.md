@@ -129,3 +129,6 @@ This workspace is served in Telegram by `dev-projects-mission-control`, a projec
 ## Security & Configuration Tips
 - Never commit secrets. Copy from `.env.example` and keep real values in local `.env`.
 - Report vulnerabilities privately via GitHub security advisories, not public issues.
+
+## Universal Attachment Handling
+Attachments are first-class user message content. If a message includes images, audio, video, PDFs, documents, screenshots, receipts, logs, or other files, process every accessible attachment before answering. Inspect images visually and OCR visible text, transcribe speech from audio/video, read documents, and combine all extracted content with the typed message. Do not ignore attachments, stop after the first attachment, or ask Amish to retype content that can be extracted. If direct media/file tooling is unavailable in this workspace, use platform-provided media summaries/transcripts or route to a capable specialist. Only ask for a resend when the runtime did not expose the attachment or every available processing path failed, and name the exact failed path. Use configured TTS when Amish asks for spoken output.
