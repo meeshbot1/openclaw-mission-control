@@ -67,13 +67,15 @@ async def run() -> None:
     from app.services.openclaw.session_service import GatewaySessionService
 
     async with async_session_maker() as session:
-        organization = (await session.exec(select(Organization).order_by(Organization.created_at))).first()
+        organization = (
+            await session.exec(select(Organization).order_by(col(Organization.created_at)))
+        ).first()
         if organization is None:
             organization = Organization(name="Personal")
             session.add(organization)
             await session.flush()
 
-        gateway = (await session.exec(select(Gateway).order_by(Gateway.created_at))).first()
+        gateway = (await session.exec(select(Gateway).order_by(col(Gateway.created_at)))).first()
         if gateway is None:
             gateway = Gateway(
                 organization_id=organization.id,
@@ -317,9 +319,12 @@ async def run() -> None:
                 continue
             cron_id = str(cron.get("id") or cron.get("name") or "unknown")
             name = str(cron.get("name") or cron_id)
-            state = cron.get("state") if isinstance(cron.get("state"), dict) else {}
+            raw_state = cron.get("state")
+            state: dict[str, Any] = raw_state if isinstance(raw_state, dict) else {}
             last_status = str(state.get("lastRunStatus") or state.get("lastStatus") or "scheduled")
-            status = "done" if last_status == "ok" else ("review" if last_status == "error" else "inbox")
+            status = (
+                "done" if last_status == "ok" else ("review" if last_status == "error" else "inbox")
+            )
             await ensure_task(
                 reason=f"runtime-cron:{cron_id}",
                 board=boards["gateway-cron-jobs"],

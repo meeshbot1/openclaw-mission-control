@@ -24,7 +24,11 @@ const statusPillClass = (value: string | null) => {
   if (normalized === "ok" || normalized === "done") {
     return "bg-emerald-100 text-emerald-800";
   }
-  if (normalized === "failed" || normalized === "error" || normalized === "timeout") {
+  if (
+    normalized === "failed" ||
+    normalized === "error" ||
+    normalized === "timeout"
+  ) {
     return "bg-rose-100 text-rose-800";
   }
   if (normalized === "running") {
@@ -36,6 +40,24 @@ const statusPillClass = (value: string | null) => {
 const formatMs = (value: number | null): string => {
   if (!value) return "—";
   return formatTimestamp(new Date(value).toISOString());
+};
+
+const isFailingCronStatus = (value: string | null): boolean => {
+  const normalized = (value ?? "").toLowerCase();
+  return (
+    normalized === "failed" ||
+    normalized === "error" ||
+    normalized === "timeout"
+  );
+};
+
+const compactResult = (value: string | null): string => {
+  if (!value) return "—";
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (!normalized) return "—";
+  return normalized.length > 120
+    ? `${normalized.slice(0, 117)}...`
+    : normalized;
 };
 
 export default function GatewayCronDashboardPage() {
@@ -112,20 +134,28 @@ export default function GatewayCronDashboardPage() {
     () => (cronQuery.data?.crons ?? []).map((item) => toGatewayCronView(item)),
     [cronQuery.data?.crons],
   );
-  const enabledCount = cronRecords.filter((item) => item.enabled === true).length;
-  const disabledCount = cronRecords.filter((item) => item.enabled === false).length;
-  const failingCount = cronRecords.filter((item) => {
-    const status = (item.lastRunStatus ?? "").toLowerCase();
-    return status === "failed" || status === "error" || status === "timeout";
-  }).length;
+  const enabledCount = cronRecords.filter(
+    (item) => item.enabled === true,
+  ).length;
+  const disabledCount = cronRecords.filter(
+    (item) => item.enabled === false,
+  ).length;
+  const failingCrons = cronRecords.filter((item) =>
+    isFailingCronStatus(item.lastRunStatus),
+  );
+  const failingCount = failingCrons.length;
 
   return (
     <DashboardPageLayout
       signedOut={{
         message: "Sign in to view cron jobs.",
-        forceRedirectUrl: gatewayId ? `/gateways/${gatewayId}/crons` : "/gateways",
+        forceRedirectUrl: gatewayId
+          ? `/gateways/${gatewayId}/crons`
+          : "/gateways",
       }}
-      title={gateway?.name ? `${gateway.name} cron dashboard` : "Cron dashboard"}
+      title={
+        gateway?.name ? `${gateway.name} cron dashboard` : "Cron dashboard"
+      }
       description="Gateway cron schedule, health, execution metadata, and model routing."
       headerActions={
         <div className="flex items-center gap-2">
@@ -175,7 +205,9 @@ export default function GatewayCronDashboardPage() {
               </p>
             </div>
             <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-xs uppercase text-slate-500">Failing last run</p>
+              <p className="text-xs uppercase text-slate-500">
+                Failing last run
+              </p>
               <p className="mt-1 text-xl font-semibold text-rose-700">
                 {failingCount}
               </p>
@@ -192,126 +224,204 @@ export default function GatewayCronDashboardPage() {
               </span>
             </div>
             {cronQuery.error ? (
-              <p className="mt-4 text-sm text-rose-600">{cronQuery.error.message}</p>
+              <p className="mt-4 text-sm text-rose-600">
+                {cronQuery.error.message}
+              </p>
             ) : cronRecords.length === 0 ? (
               <p className="mt-4 text-sm text-slate-500">
                 No cron jobs reported by this gateway.
               </p>
             ) : (
-              <div className="mt-4 overflow-x-auto">
-                <table className="min-w-full text-left text-sm text-slate-700">
-                  <thead className="text-xs uppercase tracking-wide text-slate-500">
-                    <tr>
-                      <th className="px-3 py-2">Name</th>
-                      <th className="px-3 py-2">What it does</th>
-                      <th className="px-3 py-2">Schedule</th>
-                      <th className="px-3 py-2">Enabled</th>
-                      <th className="px-3 py-2">Agent</th>
-                      <th className="px-3 py-2">Model</th>
-                      <th className="px-3 py-2">Last run</th>
-                      <th className="px-3 py-2">Status</th>
-                      <th className="px-3 py-2">Next run</th>
-                      <th className="px-3 py-2">Target</th>
-                      <th className="px-3 py-2">Details</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {cronRecords.map((cron) => (
-                      <Fragment key={cron.id}>
-                        <tr className="border-t border-slate-100">
-                          <td className="px-3 py-2 font-medium text-slate-900">
-                            {cron.name}
-                          </td>
-                          <td className="max-w-[26rem] truncate px-3 py-2 text-slate-600">
-                            {cron.purpose}
-                          </td>
-                          <td className="px-3 py-2 font-mono text-xs text-slate-700">
-                            {cron.timezone
-                              ? `${cron.schedule} (${cron.timezone})`
-                              : cron.schedule}
-                          </td>
-                          <td className="px-3 py-2">{cron.enabledLabel}</td>
-                          <td className="px-3 py-2 text-slate-600">
-                            {cron.agentId ?? "—"}
-                          </td>
-                          <td className="px-3 py-2 text-slate-600">
-                            {cron.model ?? "—"}
-                          </td>
-                          <td className="px-3 py-2 text-slate-600">
-                            {formatMs(cron.lastRunAtMs)}
-                          </td>
-                          <td className="px-3 py-2">
-                            <span
-                              className={`rounded-full px-2 py-1 text-xs font-medium ${statusPillClass(
-                                cron.lastRunStatus,
-                              )}`}
-                            >
-                              {cron.lastRunStatus ?? "—"}
+              <>
+                {failingCrons.length ? (
+                  <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-4">
+                    <p className="text-sm font-semibold text-rose-900">
+                      Failed cron action items
+                    </p>
+                    <div className="mt-3 space-y-3">
+                      {failingCrons.map((cron) => (
+                        <div key={cron.id} className="rounded-md bg-white p-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <p className="text-sm font-medium text-slate-900">
+                              {cron.name}
+                            </p>
+                            <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700">
+                              {cron.lastRunStatus ?? "failed"}
                             </span>
-                          </td>
-                          <td className="px-3 py-2 text-slate-600">
+                          </div>
+                          <p className="mt-1 text-xs text-slate-600">
+                            Last ran {formatMs(cron.lastRunAtMs)} · next{" "}
                             {formatMs(cron.nextRunAtMs)}
-                          </td>
-                          <td className="max-w-[20rem] truncate px-3 py-2 text-slate-600">
-                            {cron.target}
-                          </td>
-                          <td className="px-3 py-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() =>
-                                setSelectedCronId(
-                                  selectedCronId === cron.id ? null : cron.id,
-                                )
-                              }
-                            >
-                              {selectedCronId === cron.id ? "Hide" : "Inspect"}
-                            </Button>
-                          </td>
-                        </tr>
-                        {selectedCronId === cron.id ? (
-                          <tr className="border-t border-slate-100 bg-slate-50">
-                            <td colSpan={11} className="px-3 py-3">
-                              <div className="grid gap-3 text-sm text-slate-700 md:grid-cols-3">
-                                <div>
-                                  <p className="text-xs uppercase text-slate-500">
-                                    Schedule
-                                  </p>
-                                  <p className="mt-1 font-mono text-xs">
-                                    {cron.timezone
-                                      ? `${cron.schedule} (${cron.timezone})`
-                                      : cron.schedule}
-                                  </p>
-                                </div>
-                                <div>
-                                  <p className="text-xs uppercase text-slate-500">
-                                    Last run log
-                                  </p>
-                                  <p className="mt-1">
-                                    {cron.lastRunStatus ?? "No status"} ·{" "}
-                                    {formatMs(cron.lastRunAtMs)}
-                                    {cron.lastDurationMs
-                                      ? ` · ${cron.lastDurationMs}ms`
-                                      : ""}
-                                  </p>
-                                </div>
-                                <div>
-                                  <p className="text-xs uppercase text-slate-500">
-                                    Runtime target
-                                  </p>
-                                  <p className="mt-1 break-all font-mono text-xs">
-                                    {cron.target}
-                                  </p>
-                                </div>
-                              </div>
+                          </p>
+                          {cron.actionItems.length ? (
+                            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
+                              {cron.actionItems.map((item) => (
+                                <li key={`${cron.id}:${item}`}>{item}</li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="mt-2 text-sm text-slate-600">
+                              {compactResult(
+                                cron.lastRunError ?? cron.lastRunResult,
+                              ) ||
+                                "No action items were reported by the last failed run."}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                <div className="mt-4 overflow-x-auto">
+                  <table className="min-w-full text-left text-sm text-slate-700">
+                    <thead className="text-xs uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th className="px-3 py-2">Name</th>
+                        <th className="px-3 py-2">Schedule</th>
+                        <th className="px-3 py-2">Last run</th>
+                        <th className="px-3 py-2">Next run</th>
+                        <th className="px-3 py-2">Status</th>
+                        <th className="px-3 py-2">Result</th>
+                        <th className="px-3 py-2">Enabled</th>
+                        <th className="px-3 py-2">Agent</th>
+                        <th className="px-3 py-2">Model</th>
+                        <th className="px-3 py-2">Target</th>
+                        <th className="px-3 py-2">What it does</th>
+                        <th className="px-3 py-2">Details</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {cronRecords.map((cron) => (
+                        <Fragment key={cron.id}>
+                          <tr className="border-t border-slate-100">
+                            <td className="px-3 py-2 font-medium text-slate-900">
+                              {cron.name}
+                            </td>
+                            <td className="px-3 py-2 font-mono text-xs text-slate-700">
+                              {cron.timezone
+                                ? `${cron.schedule} (${cron.timezone})`
+                                : cron.schedule}
+                            </td>
+                            <td className="px-3 py-2 text-slate-600">
+                              {formatMs(cron.lastRunAtMs)}
+                            </td>
+                            <td className="px-3 py-2 text-slate-600">
+                              {formatMs(cron.nextRunAtMs)}
+                            </td>
+                            <td className="px-3 py-2">
+                              <span
+                                className={`rounded-full px-2 py-1 text-xs font-medium ${statusPillClass(
+                                  cron.lastRunStatus,
+                                )}`}
+                              >
+                                {cron.lastRunStatus ?? "—"}
+                              </span>
+                            </td>
+                            <td className="max-w-[18rem] px-3 py-2 text-slate-600">
+                              <span
+                                title={
+                                  cron.lastRunResult ??
+                                  cron.lastRunError ??
+                                  undefined
+                                }
+                              >
+                                {compactResult(
+                                  cron.lastRunError ?? cron.lastRunResult,
+                                )}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2">{cron.enabledLabel}</td>
+                            <td className="px-3 py-2 text-slate-600">
+                              {cron.agentId ?? "—"}
+                            </td>
+                            <td className="px-3 py-2 text-slate-600">
+                              {cron.model ?? "—"}
+                            </td>
+                            <td className="max-w-[20rem] truncate px-3 py-2 text-slate-600">
+                              {cron.target}
+                            </td>
+                            <td className="max-w-[26rem] truncate px-3 py-2 text-slate-600">
+                              {cron.purpose}
+                            </td>
+                            <td className="px-3 py-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() =>
+                                  setSelectedCronId(
+                                    selectedCronId === cron.id ? null : cron.id,
+                                  )
+                                }
+                              >
+                                {selectedCronId === cron.id
+                                  ? "Hide"
+                                  : "Inspect"}
+                              </Button>
                             </td>
                           </tr>
-                        ) : null}
-                      </Fragment>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                          {selectedCronId === cron.id ? (
+                            <tr className="border-t border-slate-100 bg-slate-50">
+                              <td colSpan={12} className="px-3 py-3">
+                                <div className="grid gap-3 text-sm text-slate-700 md:grid-cols-3">
+                                  <div>
+                                    <p className="text-xs uppercase text-slate-500">
+                                      Schedule
+                                    </p>
+                                    <p className="mt-1 font-mono text-xs">
+                                      {cron.timezone
+                                        ? `${cron.schedule} (${cron.timezone})`
+                                        : cron.schedule}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <p className="text-xs uppercase text-slate-500">
+                                      Last run log
+                                    </p>
+                                    <p className="mt-1">
+                                      {cron.lastRunStatus ?? "No status"} ·{" "}
+                                      {formatMs(cron.lastRunAtMs)}
+                                      {cron.lastDurationMs
+                                        ? ` · ${cron.lastDurationMs}ms`
+                                        : ""}
+                                    </p>
+                                    <p className="mt-2 text-slate-600">
+                                      {compactResult(
+                                        cron.lastRunError ?? cron.lastRunResult,
+                                      )}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <p className="text-xs uppercase text-slate-500">
+                                      Runtime target
+                                    </p>
+                                    <p className="mt-1 break-all font-mono text-xs">
+                                      {cron.target}
+                                    </p>
+                                  </div>
+                                </div>
+                                {cron.actionItems.length ? (
+                                  <div className="mt-3 rounded-md border border-rose-200 bg-white p-3">
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-rose-700">
+                                      Action items
+                                    </p>
+                                    <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
+                                      {cron.actionItems.map((item) => (
+                                        <li key={`${cron.id}:detail:${item}`}>
+                                          {item}
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                ) : null}
+                              </td>
+                            </tr>
+                          ) : null}
+                        </Fragment>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </div>
         </div>

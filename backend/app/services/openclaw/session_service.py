@@ -17,10 +17,10 @@ from app.models.boards import Board
 from app.models.gateways import Gateway
 from app.schemas.gateway_api import (
     GatewayCronsResponse,
+    GatewayResolveQuery,
     GatewayRuntimeEdge,
     GatewayRuntimeOverviewResponse,
     GatewayRuntimeSessionStatus,
-    GatewayResolveQuery,
     GatewaySessionHistoryResponse,
     GatewaySessionMessageRequest,
     GatewaySessionResponse,
@@ -197,9 +197,7 @@ class GatewaySessionService(OpenClawDBService):
             return None
 
         updated_at = self._session_updated_at(session_entry)
-        age_seconds = (
-            max(0, int((now_ms - updated_at) / 1000)) if updated_at is not None else None
-        )
+        age_seconds = max(0, int((now_ms - updated_at) / 1000)) if updated_at is not None else None
         raw_status_value = session_entry.get("status")
         raw_status = raw_status_value if isinstance(raw_status_value, str) else None
         aborted_last_run = bool(session_entry.get("abortedLastRun"))
@@ -235,9 +233,7 @@ class GatewaySessionService(OpenClawDBService):
         channel_value = session_entry.get("channel")
         channel = channel_value if isinstance(channel_value, str) else None
         model_provider_value = session_entry.get("modelProvider")
-        model_provider = (
-            model_provider_value if isinstance(model_provider_value, str) else None
-        )
+        model_provider = model_provider_value if isinstance(model_provider_value, str) else None
         model_value = session_entry.get("model")
         model = model_value if isinstance(model_value, str) else None
 
@@ -540,7 +536,9 @@ class GatewaySessionService(OpenClawDBService):
                 if isinstance(item, dict)
             ]
         else:
-            sessions_list = [item for item in self.as_object_list(payload) if isinstance(item, dict)]
+            sessions_list = [
+                item for item in self.as_object_list(payload) if isinstance(item, dict)
+            ]
 
         latest_sessions_by_agent: dict[str, dict[str, object]] = {}
         latest_subagent_sessions: dict[str, dict[str, object]] = {}

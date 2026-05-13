@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 from uuid import uuid4
 
@@ -14,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+import app.services.openclaw.mission_control_ops_service as ops_service
 from app.api.deps import require_org_admin
 from app.api.gateways import router as gateways_router
 from app.db.session import get_session
@@ -21,7 +23,6 @@ from app.models.gateways import Gateway
 from app.models.organization_members import OrganizationMember
 from app.models.organizations import Organization
 from app.schemas.gateway_api import GatewayRuntimeOverviewResponse, GatewayRuntimeSessionStatus
-from app.services.openclaw import mission_control_ops_service as ops_service
 from app.services.openclaw.session_service import GatewaySessionService
 from app.services.organizations import OrganizationContext
 
@@ -273,6 +274,129 @@ def _write_codex_session(root: Path) -> None:
         ),
         encoding="utf-8",
     )
+
+
+def _write_error_registry(path: Path) -> None:
+    with sqlite3.connect(path) as conn:
+        conn.execute("""
+            CREATE TABLE error_events (
+                id INTEGER PRIMARY KEY,
+                fingerprint TEXT,
+                source_kind TEXT NOT NULL,
+                source TEXT NOT NULL,
+                event_ts TEXT NOT NULL,
+                level TEXT NOT NULL,
+                message TEXT NOT NULL,
+                status TEXT NOT NULL,
+                fix_attempts INTEGER NOT NULL DEFAULT 0,
+                last_seen_at TEXT NOT NULL,
+                last_fix_attempt_at TEXT,
+                fixed_at TEXT
+            )
+            """)
+        conn.execute(
+            """
+            INSERT INTO error_events (
+                id,
+                fingerprint,
+                source_kind,
+                source,
+                event_ts,
+                level,
+                message,
+                status,
+                fix_attempts,
+                last_seen_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                1,
+                "fp-1",
+                "file",
+                "/home/amish/.openclaw/logs/gateway.log",
+                "2026-05-12T23:28:17+00:00",
+                "error",
+                "gateway connect failed: gateway token mismatch",
+                "open",
+                0,
+                "2026-05-12T23:34:23+00:00",
+            ),
+        )
+        conn.commit()
+
+
+def _write_cron_files(jobs_path: Path, states_path: Path) -> None:
+    jobs_path.write_text(
+        json.dumps(
+            {
+                "jobs": [
+                    {
+                        "id": "gateway-health-check",
+                        "name": "gateway-health-check",
+                        "agentId": "ops",
+                        "enabled": True,
+                        "schedule": {
+                            "kind": "cron",
+                            "expr": "*/10 * * * *",
+                            "tz": "America/Chicago",
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    states_path.write_text(
+        json.dumps(
+            {
+                "jobs": {
+                    "gateway-health-check": {
+                        "state": {
+                            "lastRunAtMs": 1770000000000,
+                            "lastRunStatus": "ok",
+                            "lastStatus": "ok",
+                            "nextRunAtMs": 1770000900000,
+                        }
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_error_registry_includes_assigned_cron_schedule(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    registry_path = tmp_path / "openclaw-error-registry.db"
+    jobs_path = tmp_path / "jobs.json"
+    states_path = tmp_path / "jobs-state.json"
+    _write_error_registry(registry_path)
+    _write_cron_files(jobs_path, states_path)
+
+    monkeypatch.setenv("OPENCLAW_ERROR_DB", str(registry_path))
+    monkeypatch.setattr(ops_service, "CRON_JOBS_PATH", jobs_path)
+    monkeypatch.setattr(ops_service, "CRON_JOBS_STATE_PATH", states_path)
+
+    response = ops_service.MissionControlOperationsService(session=None).get_error_registry(
+        status="open",
+        limit=5,
+    )
+
+    assert response.summary.total == 1
+    item = response.items[0]
+    assert item.assigned_agent_id == "ops"
+    assert item.assigned_cron_id == "gateway-health-check"
+    assert item.assigned_cron_schedule == "cron: */10 * * * *"
+    assert item.assigned_cron_timezone == "America/Chicago"
+    assert item.assigned_cron_enabled is True
+    assert item.assigned_cron_next_run_at_ms == 1770000900000
+    assert item.assigned_cron_last_run_at_ms == 1770000000000
+    assert item.assigned_cron_last_run_status == "ok"
+    assert item.assignment_state == "queued"
+    assert item.remediation_schedule_status == "scheduled"
 
 
 @pytest.mark.asyncio

@@ -462,7 +462,9 @@ async def test_gateway_runtime_overview_derives_statuses_and_edges(
     assert response.summary["subagents_total"] == 1
     assert response.summary["working"] >= 1
     assert response.summary["broken"] >= 1
-    assert any(edge.from_agent == "main" and edge.to_agent == "reminders" for edge in response.edges)
+    assert any(
+        edge.from_agent == "main" and edge.to_agent == "reminders" for edge in response.edges
+    )
 
     agent_by_id = {item.agent_id: item for item in response.agents}
     assert agent_by_id["main"].status == "working"

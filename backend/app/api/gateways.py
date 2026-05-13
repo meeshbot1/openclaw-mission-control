@@ -23,7 +23,10 @@ from app.schemas.gateways import (
     GatewayTemplatesSyncResult,
     GatewayUpdate,
 )
-from app.schemas.mission_control import MissionControlOperationsResponse
+from app.schemas.mission_control import (
+    MissionControlErrorRegistryResponse,
+    MissionControlOperationsResponse,
+)
 from app.schemas.pagination import DefaultLimitOffsetPage
 from app.services.openclaw.admin_service import GatewayAdminLifecycleService
 from app.services.openclaw.mission_control_ops_service import MissionControlOperationsService
@@ -97,6 +100,21 @@ async def mission_control_live_operations(
     """Return live OMX team + gateway runtime operations for dashboard admins."""
     service = MissionControlOperationsService(session)
     return await service.get_live_operations(organization_id=ctx.organization.id)
+
+
+@router.get(
+    "/mission-control/errors",
+    response_model=MissionControlErrorRegistryResponse,
+)
+async def mission_control_error_registry(
+    status: str | None = Query(default="open"),
+    limit: int = Query(default=200, ge=1, le=500),
+    session: AsyncSession = SESSION_DEP,
+    _ctx: OrganizationContext = ORG_ADMIN_DEP,
+) -> MissionControlErrorRegistryResponse:
+    """Return the local OpenClaw logged-error registry for dashboard admins."""
+    service = MissionControlOperationsService(session)
+    return service.get_error_registry(status=status, limit=limit)
 
 
 @router.post("", response_model=GatewayRead)

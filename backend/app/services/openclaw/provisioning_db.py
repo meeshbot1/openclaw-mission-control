@@ -48,8 +48,8 @@ from app.schemas.gateways import GatewayTemplatesSyncError, GatewayTemplatesSync
 from app.services.activity_log import record_activity
 from app.services.openclaw.constants import (
     _TOOLS_KV_RE,
-    DEFAULT_MODEL_PROVIDER,
     DEFAULT_HEARTBEAT_CONFIG,
+    DEFAULT_MODEL_PROVIDER,
     OFFLINE_AFTER,
 )
 from app.services.openclaw.db_agent_state import (

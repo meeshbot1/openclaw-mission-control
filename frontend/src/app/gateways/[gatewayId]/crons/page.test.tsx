@@ -38,7 +38,11 @@ vi.mock("@tanstack/react-query", async () => {
           {
             id: "mc-heartbeat",
             name: "Mission Control readiness heartbeat",
-            schedule: { kind: "cron", expr: "*/15 * * * *", tz: "America/Chicago" },
+            schedule: {
+              kind: "cron",
+              expr: "*/15 * * * *",
+              tz: "America/Chicago",
+            },
             payload: { message: "Mission Control readiness check" },
             agentId: "dev-projects-mission-control",
             enabled: true,
@@ -46,6 +50,8 @@ vi.mock("@tanstack/react-query", async () => {
               lastRunStatus: "failed",
               lastRunAtMs: 1770000000000,
               nextRunAtMs: 1770000900000,
+              lastRunResult:
+                "Action items:\n- Restart the Mission Control worker",
             },
           },
         ],
@@ -57,7 +63,13 @@ vi.mock("@tanstack/react-query", async () => {
 });
 
 vi.mock("@/components/templates/DashboardPageLayout", () => ({
-  DashboardPageLayout: ({ children, title }: { children: React.ReactNode; title: string }) => (
+  DashboardPageLayout: ({
+    children,
+    title,
+  }: {
+    children: React.ReactNode;
+    title: string;
+  }) => (
     <div>
       <h1>{title}</h1>
       {children}
@@ -66,9 +78,13 @@ vi.mock("@/components/templates/DashboardPageLayout", () => ({
 }));
 
 vi.mock("@/components/ui/button", () => ({
-  Button: ({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) => (
-    <button onClick={onClick}>{children}</button>
-  ),
+  Button: ({
+    children,
+    onClick,
+  }: {
+    children: React.ReactNode;
+    onClick?: () => void;
+  }) => <button onClick={onClick}>{children}</button>,
 }));
 
 vi.mock("@/api/mutator", () => ({
@@ -98,10 +114,20 @@ describe("/gateways/[gatewayId]/crons", () => {
   it("renders failing cron summary and job details", () => {
     render(<GatewayCronDashboardPage />);
 
-    expect(screen.getByRole("heading", { name: /local openclaw gateway cron dashboard/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", {
+        name: /local openclaw gateway cron dashboard/i,
+      }),
+    ).toBeInTheDocument();
     expect(screen.getByText(/total jobs/i)).toBeInTheDocument();
-    expect(screen.getByText(/mission control readiness heartbeat/i)).toBeInTheDocument();
+    expect(
+      screen.getAllByText(/mission control readiness heartbeat/i).length,
+    ).toBeGreaterThan(0);
     expect(screen.getByText(/failing last run/i)).toBeInTheDocument();
+    expect(screen.getByText(/failed cron action items/i)).toBeInTheDocument();
+    expect(
+      screen.getAllByText(/restart the mission control worker/i).length,
+    ).toBeGreaterThan(0);
     expect(screen.getAllByText(/failed/i).length).toBeGreaterThan(0);
   });
 });

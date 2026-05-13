@@ -498,6 +498,7 @@ export const TaskBoard = memo(function TaskBoard({
                         status={task.status}
                         priority={task.priority}
                         assignee={task.assignee ?? undefined}
+                        assigneeId={task.assigned_agent_id ?? null}
                         due={dueState.due}
                         isOverdue={dueState.isOverdue}
                         approvalsPendingCount={task.approvals_pending_count}

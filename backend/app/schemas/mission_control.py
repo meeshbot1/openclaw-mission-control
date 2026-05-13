@@ -131,3 +131,59 @@ class MissionControlOperationsResponse(SQLModel):
     teams: list[MissionControlTeamOperation] = Field(default_factory=list)
     gateways: list[MissionControlGatewayRuntime] = Field(default_factory=list)
     codex_sessions: list[MissionControlCodexSession] = Field(default_factory=list)
+
+
+class MissionControlErrorRegistryItem(SQLModel):
+    """Read-only row from the local OpenClaw error registry."""
+
+    id: int
+    fingerprint: str | None = None
+    source_kind: str
+    source: str
+    event_ts: str
+    level: str
+    service: str | None = None
+    category: str | None = None
+    fix_type: str | None = None
+    message: str
+    status: str
+    fix_attempts: int = 0
+    last_seen_at: str
+    last_fix_attempt_at: str | None = None
+    fixed_at: str | None = None
+    assigned_agent_id: str | None = None
+    assigned_cron_id: str | None = None
+    assigned_cron_name: str | None = None
+    assigned_cron_schedule: str | None = None
+    assigned_cron_timezone: str | None = None
+    assigned_cron_enabled: bool | None = None
+    assigned_cron_next_run_at_ms: int | None = None
+    assigned_cron_last_run_at_ms: int | None = None
+    assigned_cron_last_run_status: str | None = None
+    remediation_schedule_status: str = "not-scheduled"
+    assignment_state: str = "assigned"
+    assignment_reason: str | None = None
+    action_items: list[str] = Field(default_factory=list)
+
+
+class MissionControlErrorRegistrySummary(SQLModel):
+    """Aggregate counts for the local OpenClaw error registry."""
+
+    total: int = 0
+    open: int = 0
+    observed: int = 0
+    ignored: int = 0
+    fixed: int = 0
+    assigned: int = 0
+    working: int = 0
+
+
+class MissionControlErrorRegistryResponse(SQLModel):
+    """Read-only Mission Control view over OpenClaw's logged error registry."""
+
+    db_path: str | None = None
+    generated_at: str
+    summary: MissionControlErrorRegistrySummary = Field(
+        default_factory=MissionControlErrorRegistrySummary
+    )
+    items: list[MissionControlErrorRegistryItem] = Field(default_factory=list)

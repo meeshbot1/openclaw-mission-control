@@ -9,6 +9,7 @@ interface TaskCardProps {
   status?: TaskStatus;
   priority?: string;
   assignee?: string;
+  assigneeId?: string | null;
   due?: string;
   isOverdue?: boolean;
   approvalsPendingCount?: number;
@@ -27,6 +28,7 @@ export function TaskCard({
   status,
   priority,
   assignee,
+  assigneeId,
   due,
   isOverdue = false,
   approvalsPendingCount = 0,
@@ -66,6 +68,8 @@ export function TaskCard({
 
   const priorityLabel = priority ? priority.toUpperCase() : "MEDIUM";
   const visibleTags = tags.slice(0, 3);
+  const assigneeLabel =
+    assignee ?? (assigneeId ? `Agent ${assigneeId.slice(0, 8)}` : "Unassigned");
 
   return (
     <div
@@ -156,7 +160,7 @@ export function TaskCard({
       <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
         <div className="flex items-center gap-2">
           <UserCircle className="h-4 w-4 text-slate-400" />
-          <span>{assignee ?? "Unassigned"}</span>
+          <span>{assigneeLabel}</span>
         </div>
         {due ? (
           <div

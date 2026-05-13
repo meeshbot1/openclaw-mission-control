@@ -4,9 +4,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TIMEOUT_SECONDS="${OPENCLAW_FRONTEND_BUILD_TIMEOUT_SECONDS:-300}"
 MIN_AVAILABLE_KB="${OPENCLAW_FRONTEND_BUILD_MIN_AVAILABLE_KB:-2097152}"
-MEMORY_MAX="${OPENCLAW_FRONTEND_BUILD_MEMORY_MAX:-1200M}"
+MEMORY_MAX="${OPENCLAW_FRONTEND_BUILD_MEMORY_MAX:-2400M}"
 CPU_QUOTA="${OPENCLAW_FRONTEND_BUILD_CPU_QUOTA:-150%}"
-MAX_OLD_SPACE_MB="${OPENCLAW_FRONTEND_BUILD_MAX_OLD_SPACE_MB:-512}"
+MAX_OLD_SPACE_MB="${OPENCLAW_FRONTEND_BUILD_MAX_OLD_SPACE_MB:-1024}"
+BUILD_ENGINE="${OPENCLAW_FRONTEND_BUILD_ENGINE:-webpack}"
 
 available_kb="$(awk '/MemAvailable:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)"
 if [[ "${OPENCLAW_ALLOW_LOW_MEMORY_BUILD:-0}" != "1" ]] && (( available_kb > 0 && available_kb < MIN_AVAILABLE_KB )); then
@@ -18,7 +19,24 @@ fi
 export NEXT_TELEMETRY_DISABLED="${NEXT_TELEMETRY_DISABLED:-1}"
 export NODE_OPTIONS="${NODE_OPTIONS:-} --max-old-space-size=${MAX_OLD_SPACE_MB}"
 
-cmd=(timeout "$TIMEOUT_SECONDS" bash scripts/with_node.sh --cwd frontend npx next build)
+build_args=()
+case "$BUILD_ENGINE" in
+  default|"")
+    ;;
+  turbo|turbopack)
+    build_args=(--turbopack)
+    ;;
+  webpack)
+    build_args=(--webpack)
+    ;;
+  *)
+    echo "Unsupported OPENCLAW_FRONTEND_BUILD_ENGINE=${BUILD_ENGINE}" >&2
+    echo "Use one of: default, webpack, turbopack." >&2
+    exit 64
+    ;;
+esac
+
+cmd=(timeout "$TIMEOUT_SECONDS" bash scripts/with_node.sh --cwd frontend npx next build "${build_args[@]}")
 
 cd "$ROOT"
 

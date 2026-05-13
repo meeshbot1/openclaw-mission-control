@@ -5,18 +5,24 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
+import sqlite3
 from collections import Counter
 from pathlib import Path
 from typing import Any
 from uuid import UUID
 
 from fastapi import HTTPException
+
 from app.core.time import utcnow
 from app.models.gateways import Gateway
 from app.schemas.gateway_api import GatewayResolveQuery, GatewayRuntimeOverviewResponse
 from app.schemas.mission_control import (
     MissionControlCodexEvent,
     MissionControlCodexSession,
+    MissionControlErrorRegistryItem,
+    MissionControlErrorRegistryResponse,
+    MissionControlErrorRegistrySummary,
     MissionControlEventSummary,
     MissionControlGatewayRuntime,
     MissionControlMailboxMessage,
@@ -29,6 +35,11 @@ from app.schemas.mission_control import (
 from app.services.openclaw.session_service import GatewaySessionService
 
 PROJECT_WORKSPACE_ROOTS_ENV = "MISSION_CONTROL_PROJECT_WORKSPACE_ROOTS"
+ERROR_REGISTRY_DB_ENV = "OPENCLAW_ERROR_DB"
+DEFAULT_ERROR_REGISTRY_DB = Path("/home/amish/.openclaw/logs/openclaw-error-registry.db")
+LEGACY_ERROR_REGISTRY_DB = Path("/home/amish/.openclaw/workspace/ops/gateway_ops.db")
+CRON_JOBS_PATH = Path("/home/amish/.openclaw/cron/jobs.json")
+CRON_JOBS_STATE_PATH = Path("/home/amish/.openclaw/cron/jobs-state.json")
 IGNORED_SCAN_DIRS = {
     ".git",
     ".hg",
@@ -48,6 +59,8 @@ ACTIVE_WORKER_STATES = {"busy", "working", "in_progress"}
 MAX_CODEX_SESSIONS = 50
 MAX_CODEX_EVENTS = 8
 GATEWAY_RUNTIME_TIMEOUT_SECONDS = 3.0
+MAX_ERROR_REGISTRY_ITEMS = 500
+ERROR_REGISTRY_DEFAULT_LIMIT = 200
 CODEX_EVENT_TYPES = {
     "model.completed": "message",
     "prompt.submitted": "command",
@@ -109,6 +122,552 @@ class MissionControlOperationsService:
             gateways=gateway_runtimes,
             codex_sessions=codex_sessions,
         )
+
+    def get_error_registry(
+        self,
+        *,
+        status: str | None = "open",
+        limit: int = ERROR_REGISTRY_DEFAULT_LIMIT,
+    ) -> MissionControlErrorRegistryResponse:
+        """Return a read-only operator view over the local OpenClaw error registry."""
+
+        db_path = self._error_registry_db_path()
+        generated_at = utcnow().isoformat()
+        if db_path is None:
+            return MissionControlErrorRegistryResponse(
+                db_path=None,
+                generated_at=generated_at,
+            )
+
+        limit = max(1, min(limit, MAX_ERROR_REGISTRY_ITEMS))
+        cron_jobs = self._load_cron_jobs()
+        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5) as conn:
+            conn.row_factory = sqlite3.Row
+            columns = self._sqlite_columns(conn, "error_events")
+            if not columns:
+                return MissionControlErrorRegistryResponse(
+                    db_path=str(db_path),
+                    generated_at=generated_at,
+                )
+            rows = self._error_registry_rows(
+                conn=conn,
+                columns=columns,
+                status=status,
+                limit=limit,
+            )
+
+        items = [
+            self._error_registry_item(row, columns=columns, cron_jobs=cron_jobs) for row in rows
+        ]
+        summary_counts = Counter(item.status for item in items)
+        return MissionControlErrorRegistryResponse(
+            db_path=str(db_path),
+            generated_at=generated_at,
+            summary=MissionControlErrorRegistrySummary(
+                total=len(items),
+                open=summary_counts.get("open", 0),
+                observed=summary_counts.get("observed", 0),
+                ignored=summary_counts.get("ignored", 0),
+                fixed=summary_counts.get("fixed", 0),
+                assigned=sum(
+                    1 for item in items if item.assigned_agent_id or item.assigned_cron_id
+                ),
+                working=sum(1 for item in items if item.assignment_state == "working"),
+            ),
+            items=items,
+        )
+
+    def _error_registry_db_path(self) -> Path | None:
+        configured = os.environ.get(ERROR_REGISTRY_DB_ENV, "").strip()
+        candidates = [
+            Path(configured).expanduser() if configured else None,
+            DEFAULT_ERROR_REGISTRY_DB,
+            LEGACY_ERROR_REGISTRY_DB,
+        ]
+        for candidate in candidates:
+            if candidate and candidate.is_file():
+                return candidate
+        return None
+
+    @staticmethod
+    def _sqlite_columns(conn: sqlite3.Connection, table: str) -> set[str]:
+        return {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+
+    @staticmethod
+    def _error_registry_rows(
+        *,
+        conn: sqlite3.Connection,
+        columns: set[str],
+        status: str | None,
+        limit: int,
+    ) -> list[sqlite3.Row]:
+        select_columns = [
+            "id",
+            "fingerprint",
+            "source_kind",
+            "source",
+            "event_ts",
+            "level",
+            "message",
+            "status",
+            "fix_attempts",
+            "last_seen_at",
+            "last_fix_attempt_at",
+            "fixed_at",
+        ]
+        for optional in ("service", "category", "fix_type", "metadata_json"):
+            if optional in columns:
+                select_columns.append(optional)
+        where = ""
+        params: list[Any] = []
+        normalized_status = (status or "").strip().lower()
+        if normalized_status and normalized_status != "all":
+            where = "WHERE status = ?"
+            params.append(normalized_status)
+        params.append(limit)
+        return conn.execute(
+            f"""
+            SELECT {", ".join(select_columns)}
+            FROM error_events
+            {where}
+            ORDER BY event_ts DESC, id DESC
+            LIMIT ?
+            """,
+            params,
+        ).fetchall()
+
+    def _error_registry_item(
+        self,
+        row: sqlite3.Row,
+        *,
+        columns: set[str],
+        cron_jobs: list[dict[str, Any]],
+    ) -> MissionControlErrorRegistryItem:
+        def value(key: str) -> Any:
+            return row[key] if key in row.keys() else None
+
+        source = str(value("source") or "")
+        message = str(value("message") or "")
+        service = self._string_or_none(value("service")) or self._infer_error_service(
+            source=source,
+            message=message,
+        )
+        category = self._string_or_none(value("category")) or self._infer_error_category(
+            source=source,
+            message=message,
+            service=service,
+        )
+        fix_type = self._string_or_none(value("fix_type")) or self._infer_error_fix_type(
+            category=category,
+            source=source,
+            message=message,
+        )
+        matched_cron = self._match_cron_job(source=source, message=message, cron_jobs=cron_jobs)
+        assigned_agent_id = (
+            self._string_or_none(matched_cron.get("agentId")) if matched_cron else None
+        ) or self._assigned_agent_for_error(service=service, category=category, source=source)
+        cron = matched_cron or self._infer_remediation_cron(
+            assigned_agent_id=assigned_agent_id,
+            service=service,
+            category=category,
+            fix_type=fix_type,
+            cron_jobs=cron_jobs,
+        )
+        assignment_state = self._cron_assignment_state(cron)
+        action_items = self._error_action_items(
+            category=category,
+            fix_type=fix_type,
+            source=source,
+            message=message,
+            cron=cron,
+        )
+
+        return MissionControlErrorRegistryItem(
+            id=int(value("id") or 0),
+            fingerprint=self._string_or_none(value("fingerprint")),
+            source_kind=str(value("source_kind") or "unknown"),
+            source=source,
+            event_ts=str(value("event_ts") or ""),
+            level=str(value("level") or "error"),
+            service=service,
+            category=category,
+            fix_type=fix_type,
+            message=self._truncate(message, 500) or "",
+            status=str(value("status") or "open"),
+            fix_attempts=int(value("fix_attempts") or 0),
+            last_seen_at=str(value("last_seen_at") or value("event_ts") or ""),
+            last_fix_attempt_at=self._string_or_none(value("last_fix_attempt_at")),
+            fixed_at=self._string_or_none(value("fixed_at")),
+            assigned_agent_id=assigned_agent_id,
+            assigned_cron_id=self._string_or_none(cron.get("id")) if cron else None,
+            assigned_cron_name=self._string_or_none(cron.get("name")) if cron else None,
+            assigned_cron_schedule=self._cron_schedule_label(cron),
+            assigned_cron_timezone=self._cron_timezone(cron),
+            assigned_cron_enabled=self._cron_enabled(cron),
+            assigned_cron_next_run_at_ms=self._cron_int_state(cron, "nextRunAtMs"),
+            assigned_cron_last_run_at_ms=self._cron_int_state(cron, "lastRunAtMs"),
+            assigned_cron_last_run_status=self._cron_string_state(
+                cron,
+                "lastRunStatus",
+                "lastStatus",
+            ),
+            remediation_schedule_status=self._cron_schedule_status(cron),
+            assignment_state=assignment_state,
+            assignment_reason=fix_type or category or service,
+            action_items=action_items,
+        )
+
+    @staticmethod
+    def _string_or_none(value: Any) -> str | None:
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        return None
+
+    @staticmethod
+    def _load_cron_jobs() -> list[dict[str, Any]]:
+        if not CRON_JOBS_PATH.is_file():
+            return []
+        try:
+            payload = json.loads(CRON_JOBS_PATH.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return []
+        jobs = payload.get("jobs") if isinstance(payload, dict) else None
+        if not isinstance(jobs, list):
+            return []
+        states = MissionControlOperationsService._load_cron_job_states()
+        merged_jobs: list[dict[str, Any]] = []
+        for raw_job in jobs:
+            if not isinstance(raw_job, dict):
+                continue
+            job = dict(raw_job)
+            job_id = MissionControlOperationsService._string_or_none(job.get("id"))
+            state = states.get(job_id or "")
+            if state:
+                existing_state = job.get("state")
+                merged_state = dict(existing_state) if isinstance(existing_state, dict) else {}
+                merged_state.update(state)
+                job["state"] = merged_state
+            merged_jobs.append(job)
+        return merged_jobs
+
+    @staticmethod
+    def _load_cron_job_states() -> dict[str, dict[str, Any]]:
+        if not CRON_JOBS_STATE_PATH.is_file():
+            return {}
+        try:
+            payload = json.loads(CRON_JOBS_STATE_PATH.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {}
+        jobs = payload.get("jobs") if isinstance(payload, dict) else None
+        if not isinstance(jobs, dict):
+            return {}
+        states: dict[str, dict[str, Any]] = {}
+        for job_id, raw_state in jobs.items():
+            if not isinstance(job_id, str) or not isinstance(raw_state, dict):
+                continue
+            state = raw_state.get("state")
+            if isinstance(state, dict):
+                states[job_id] = state
+            else:
+                states[job_id] = raw_state
+        return states
+
+    @staticmethod
+    def _slug(value: str) -> str:
+        return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+
+    def _match_cron_job(
+        self,
+        *,
+        source: str,
+        message: str,
+        cron_jobs: list[dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        haystack = f"{source}\n{message}".lower()
+        source_slug = self._slug(
+            Path(source).name.removeprefix("openclaw-").removesuffix(".service")
+        )
+        for job in cron_jobs:
+            job_id = self._string_or_none(job.get("id"))
+            job_name = self._string_or_none(job.get("name"))
+            candidates = [item for item in (job_id, job_name) if item]
+            if any(candidate.lower() in haystack for candidate in candidates):
+                return job
+            if any(self._slug(candidate) == source_slug for candidate in candidates):
+                return job
+        return None
+
+    def _infer_remediation_cron(
+        self,
+        *,
+        assigned_agent_id: str,
+        service: str | None,
+        category: str | None,
+        fix_type: str | None,
+        cron_jobs: list[dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        preferred_slugs = self._preferred_remediation_cron_slugs(
+            service=service,
+            category=category,
+            fix_type=fix_type,
+        )
+        if not preferred_slugs:
+            return None
+        for preferred_slug in preferred_slugs:
+            for job in cron_jobs:
+                job_agent_id = self._string_or_none(job.get("agentId"))
+                if job_agent_id and job_agent_id != assigned_agent_id:
+                    continue
+                if self._cron_matches_slug(job, preferred_slug):
+                    return job
+            for job in cron_jobs:
+                if self._cron_matches_slug(job, preferred_slug):
+                    return job
+        return None
+
+    @staticmethod
+    def _preferred_remediation_cron_slugs(
+        *,
+        service: str | None,
+        category: str | None,
+        fix_type: str | None,
+    ) -> list[str]:
+        if service == "mission-control" or category == "mission-control-health":
+            return ["mission-control-stabilizer-nightly", "mission-control-stabilizer"]
+        if fix_type == "gateway-token-repair":
+            return [
+                "gateway-health-check",
+                "gateway-approved-fix-executor",
+                "gateway-error-digest",
+            ]
+        if fix_type == "gateway-health-check" or category == "gateway-health":
+            return ["gateway-health-check", "gateway-log-scan"]
+        if fix_type == "restart-user-service" or category == "systemd-health":
+            return ["openclaw-self-stabilizer", "gateway-maintenance-window"]
+        if fix_type == "disk-cleanup-review" or category == "disk-health":
+            return ["gateway-disk-usage-scan"]
+        return []
+
+    def _cron_matches_slug(self, cron: dict[str, Any], slug: str) -> bool:
+        candidates = (
+            self._string_or_none(cron.get("id")),
+            self._string_or_none(cron.get("name")),
+        )
+        return any(candidate and slug in self._slug(candidate) for candidate in candidates)
+
+    @staticmethod
+    def _infer_error_service(*, source: str, message: str) -> str:
+        low = f"{source}\n{message}".lower()
+        for token in (
+            "mission-control",
+            "gateway",
+            "cron",
+            "telegram",
+            "discord",
+            "openai",
+            "google",
+            "qmd",
+            "sqlite",
+            "sandbox",
+            "ollama",
+        ):
+            if token in low:
+                return token
+        return "openclaw"
+
+    @staticmethod
+    def _infer_error_category(*, source: str, message: str, service: str | None) -> str:
+        low = f"{source}\n{message}".lower()
+        if "gateway token mismatch" in low or "token_mismatch" in low:
+            return "gateway-token-drift"
+        if service == "mission-control" or "uvicorn app.main" in low or "next-server" in low:
+            return "mission-control-health"
+        if ".service" in low or ".timer" in low or "systemd" in low:
+            return "systemd-health"
+        if "disk" in low or "no space left" in low:
+            return "disk-health"
+        if "ollama" in low or "11434" in low or "11435" in low:
+            return "optional-ollama"
+        if service == "gateway":
+            return "gateway-health"
+        return "runtime-error"
+
+    @staticmethod
+    def _infer_error_fix_type(*, category: str | None, source: str, message: str) -> str | None:
+        low = f"{source}\n{message}".lower()
+        if category == "gateway-token-drift":
+            return "gateway-token-repair"
+        if category == "mission-control-health" or category == "systemd-health":
+            return "restart-user-service"
+        if category == "disk-health":
+            return "disk-cleanup-review"
+        if "health-check" in low or category == "gateway-health":
+            return "gateway-health-check"
+        return None
+
+    @staticmethod
+    def _assigned_agent_for_error(
+        *,
+        service: str | None,
+        category: str | None,
+        source: str,
+    ) -> str:
+        low = source.lower()
+        if service == "mission-control" or category == "mission-control-health":
+            return "dev-projects-mission-control"
+        if "medical-team" in low:
+            return "dev-projects-medical-team-platform-app"
+        return "ops"
+
+    def _cron_assignment_state(self, cron: dict[str, Any] | None) -> str:
+        if not cron:
+            return "assigned"
+        status = (self._cron_string_state(cron, "lastRunStatus", "lastStatus") or "").lower()
+        if self._cron_int_state(cron, "runningAtMs") is not None or status == "running":
+            return "working"
+        if self._cron_int_state(cron, "nextRunAtMs") is not None:
+            return "queued"
+        return "assigned"
+
+    @staticmethod
+    def _cron_state(cron: dict[str, Any] | None) -> dict[str, Any]:
+        if not cron:
+            return {}
+        state = cron.get("state")
+        return state if isinstance(state, dict) else {}
+
+    def _cron_string_state(self, cron: dict[str, Any] | None, *keys: str) -> str | None:
+        state = self._cron_state(cron)
+        for key in keys:
+            value = self._string_or_none(state.get(key))
+            if value:
+                return value
+            value = self._string_or_none(cron.get(key)) if cron else None
+            if value:
+                return value
+        return None
+
+    @staticmethod
+    def _cron_int_state(cron: dict[str, Any] | None, key: str) -> int | None:
+        if not cron:
+            return None
+        state = MissionControlOperationsService._cron_state(cron)
+        for source in (state, cron):
+            value = source.get(key)
+            if isinstance(value, int):
+                return value
+            if isinstance(value, float):
+                return int(value)
+            if isinstance(value, str) and value.strip():
+                try:
+                    return int(float(value))
+                except ValueError:
+                    continue
+        return None
+
+    @staticmethod
+    def _cron_enabled(cron: dict[str, Any] | None) -> bool | None:
+        if not cron:
+            return None
+        enabled = cron.get("enabled")
+        return enabled if isinstance(enabled, bool) else None
+
+    def _cron_schedule_label(self, cron: dict[str, Any] | None) -> str | None:
+        if not cron:
+            return None
+        schedule = cron.get("schedule")
+        if isinstance(schedule, str):
+            return self._string_or_none(schedule)
+        if isinstance(schedule, dict):
+            kind = self._string_or_none(schedule.get("kind"))
+            expr = self._string_or_none(schedule.get("expr"))
+            every_ms = self._cron_int_state({"state": schedule}, "everyMs")
+            if kind and expr:
+                return f"{kind}: {expr}"
+            if expr:
+                return expr
+            if kind == "every" and every_ms:
+                return f"every {round(every_ms / 60000)} min"
+        return self._string_or_none(cron.get("cron")) or self._string_or_none(
+            cron.get("expression")
+        )
+
+    def _cron_timezone(self, cron: dict[str, Any] | None) -> str | None:
+        if not cron:
+            return None
+        schedule = cron.get("schedule")
+        if isinstance(schedule, dict):
+            return self._string_or_none(schedule.get("tz"))
+        return self._string_or_none(cron.get("tz"))
+
+    def _cron_schedule_status(self, cron: dict[str, Any] | None) -> str:
+        if not cron:
+            return "not-scheduled"
+        if self._cron_int_state(cron, "runningAtMs") is not None:
+            return "running"
+        if self._cron_enabled(cron) is False:
+            return "disabled"
+        if self._cron_int_state(cron, "nextRunAtMs") is not None:
+            return "scheduled"
+        if self._cron_schedule_label(cron):
+            return "schedule-pending"
+        return "not-scheduled"
+
+    def _error_action_items(
+        self,
+        *,
+        category: str | None,
+        fix_type: str | None,
+        source: str,
+        message: str,
+        cron: dict[str, Any] | None,
+    ) -> list[str]:
+        low = f"{source}\n{message}".lower()
+        items: list[str] = []
+        if cron:
+            name = self._string_or_none(cron.get("name")) or self._string_or_none(cron.get("id"))
+            if name:
+                items.append(
+                    f"Review the `{name}` cron's last run output and rerun after fixing the cause."
+                )
+                if self._cron_enabled(cron) is False:
+                    items.append(
+                        f"`{name}` is disabled; enable it or run it manually before expecting an automatic fix."
+                    )
+                elif self._cron_int_state(cron, "nextRunAtMs") is None:
+                    items.append(f"Verify the scheduler has calculated the next run for `{name}`.")
+        if fix_type == "gateway-token-repair":
+            items.extend(
+                [
+                    "Verify `gateway.remote.token` matches `gateway.auth.token`.",
+                    "Restart the gateway after token repair and confirm `/api/v1/gateways/status` is healthy.",
+                ]
+            )
+        elif fix_type == "restart-user-service":
+            items.append(
+                "Inspect the service journal, restart the affected user service, and re-check health."
+            )
+        elif fix_type == "gateway-health-check":
+            items.append(
+                "Run the gateway health check and inspect gateway logs for the same fingerprint."
+            )
+        elif fix_type == "disk-cleanup-review":
+            items.append(
+                "Review disk usage and clean generated logs or artifacts before retrying failed work."
+            )
+        elif category == "optional-ollama":
+            items.append(
+                "Confirm whether Ollama is required; otherwise keep optional Ollama noise ignored."
+            )
+        elif "lsof failed" in low:
+            items.append(
+                "Install or restore `lsof`, or suppress the stale-pid scan warning if startup is healthy."
+            )
+        else:
+            items.append(
+                "Review the source log, assign remediation owner, and mark the error fixed after verification."
+            )
+        return list(dict.fromkeys(items))[:5]
 
     def _scan_roots(self, gateways: list[Gateway]) -> list[Path]:
         roots: list[Path] = []
@@ -187,9 +746,7 @@ class MissionControlOperationsService:
                 ),
                 active=self._codex_session_active(events),
                 updated_at=(
-                    binding.get("updatedAt")
-                    if isinstance(binding.get("updatedAt"), str)
-                    else None
+                    binding.get("updatedAt") if isinstance(binding.get("updatedAt"), str) else None
                 ),
                 recent_events=events,
             )
@@ -284,9 +841,11 @@ class MissionControlOperationsService:
                 MissionControlCodexEvent(
                     type="message",
                     summary=f"{role}: {summary}",
-                    created_at=payload.get("timestamp")
-                    if isinstance(payload.get("timestamp"), str)
-                    else None,
+                    created_at=(
+                        payload.get("timestamp")
+                        if isinstance(payload.get("timestamp"), str)
+                        else None
+                    ),
                 )
             )
         items.sort(key=lambda item: item.created_at or "", reverse=True)
@@ -299,14 +858,20 @@ class MissionControlOperationsService:
         if raw_type == "model.completed":
             texts = data.get("assistantTexts")
             if isinstance(texts, list) and texts:
-                first = next((item for item in texts if isinstance(item, str) and item.strip()), None)
+                first = next(
+                    (item for item in texts if isinstance(item, str) and item.strip()), None
+                )
                 if first:
                     return f"Assistant reply: {self._truncate(first)}"
             usage = data.get("usage")
             return f"Model completed ({usage})" if usage else "Model completed"
         if raw_type == "session.started":
             tool_count = data.get("toolCount")
-            return f"Session started ({tool_count} tools)" if tool_count is not None else "Session started"
+            return (
+                f"Session started ({tool_count} tools)"
+                if tool_count is not None
+                else "Session started"
+            )
         if raw_type == "session.ended":
             status = data.get("status")
             return f"Session ended: {status}" if isinstance(status, str) else "Session ended"
@@ -546,7 +1111,11 @@ class MissionControlOperationsService:
             if isinstance(state, str) and state.strip():
                 return state.strip()
         raw_state = state_by_name.get(name)
-        if isinstance(raw_state, str) and raw_state.strip() and raw_state.strip().lower() != "unknown":
+        if (
+            isinstance(raw_state, str)
+            and raw_state.strip()
+            and raw_state.strip().lower() != "unknown"
+        ):
             return raw_state.strip()
         if bool(alive_by_name.get(name)) and task_id:
             return "in_progress"

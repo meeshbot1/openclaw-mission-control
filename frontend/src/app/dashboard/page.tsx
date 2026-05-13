@@ -54,6 +54,7 @@ import {
   formatTimestamp,
   parseTimestamp,
 } from "@/lib/formatters";
+import { dashboardDetailHref } from "@/app/dashboard/detail-links";
 import { type GatewayCronView, toGatewayCronView } from "@/lib/gateway-crons";
 
 type SessionSummary = {
@@ -348,9 +349,13 @@ const readTimestampFromRecords = (
   return null;
 };
 
-const sessionIdentifiers = (record: Record<string, unknown> | null): string[] => {
+const sessionIdentifiers = (
+  record: Record<string, unknown> | null,
+): string[] => {
   if (!record) return [];
-  const ids = SESSION_ID_KEYS.map((key) => readString(record, [key])).filter(Boolean) as string[];
+  const ids = SESSION_ID_KEYS.map((key) => readString(record, [key])).filter(
+    Boolean,
+  ) as string[];
   return [...new Set(ids)];
 };
 
@@ -360,7 +365,10 @@ const sharesSessionIdentity = (left: string[], right: string[]): boolean =>
 const gatewayQueryParams = (target: GatewayTarget): URLSearchParams => {
   const params = new URLSearchParams();
   params.set("gateway_url", target.gatewayUrl);
-  params.set("gateway_disable_device_pairing", String(target.disableDevicePairing));
+  params.set(
+    "gateway_disable_device_pairing",
+    String(target.disableDevicePairing),
+  );
   params.set("gateway_allow_insecure_tls", String(target.allowInsecureTls));
   return params;
 };
@@ -377,28 +385,47 @@ const compactNumber = (value: number): string => {
 };
 
 const formatCount = (value: number): string =>
-  Number.isFinite(value) ? numberFormatter.format(Math.max(0, Math.round(value))) : "0";
+  Number.isFinite(value)
+    ? numberFormatter.format(Math.max(0, Math.round(value)))
+    : "0";
 
 const formatPercent = (value: number): string =>
   Number.isFinite(value) ? `${value.toFixed(1)}%` : DASH;
 
 const formatPerDay = (total: number, days: number): string => {
-  if (!Number.isFinite(total) || !Number.isFinite(days) || days <= 0) return DASH;
+  if (!Number.isFinite(total) || !Number.isFinite(days) || days <= 0)
+    return DASH;
   return `${(total / days).toFixed(1)}/day`;
 };
 
 const statusToneClass = (status: string | null | undefined): string => {
   const normalized = (status ?? "").toLowerCase();
-  if (normalized === "completed" || normalized === "done" || normalized === "ok") {
+  if (
+    normalized === "completed" ||
+    normalized === "done" ||
+    normalized === "ok"
+  ) {
     return "bg-emerald-100 text-emerald-700";
   }
-  if (normalized === "in_progress" || normalized === "busy" || normalized === "working") {
+  if (
+    normalized === "in_progress" ||
+    normalized === "busy" ||
+    normalized === "working"
+  ) {
     return "bg-blue-100 text-blue-700";
   }
-  if (normalized === "failed" || normalized === "error" || normalized === "broken") {
+  if (
+    normalized === "failed" ||
+    normalized === "error" ||
+    normalized === "broken"
+  ) {
     return "bg-rose-100 text-rose-700";
   }
-  if (normalized === "blocked" || normalized === "pending" || normalized === "waiting") {
+  if (
+    normalized === "blocked" ||
+    normalized === "pending" ||
+    normalized === "waiting"
+  ) {
     return "bg-amber-100 text-amber-700";
   }
   return "bg-slate-200 text-slate-700";
@@ -421,15 +448,15 @@ const toSessionSummaries = (
   sessions: unknown[] | null | undefined,
   mainSession: unknown,
 ): SessionSummary[] => {
-  const sessionRecords = (sessions ?? []).map(toRecord).filter(Boolean) as Array<
-    Record<string, unknown>
-  >;
+  const sessionRecords = (sessions ?? [])
+    .map(toRecord)
+    .filter(Boolean) as Array<Record<string, unknown>>;
   const mainRecord = toRecord(mainSession);
   const mainIdentifiers = sessionIdentifiers(mainRecord);
 
   if (mainRecord && mainIdentifiers.length > 0) {
-    const exists = sessionRecords.some(
-      (entry) => sharesSessionIdentity(sessionIdentifiers(entry), mainIdentifiers),
+    const exists = sessionRecords.some((entry) =>
+      sharesSessionIdentity(sessionIdentifiers(entry), mainIdentifiers),
     );
     if (!exists) sessionRecords.unshift(mainRecord);
   }
@@ -439,7 +466,10 @@ const toSessionSummaries = (
 
   for (const entry of sessionRecords) {
     const identifiers = sessionIdentifiers(entry);
-    if (identifiers.length > 0 && identifiers.some((value) => seenIdentifiers.has(value))) {
+    if (
+      identifiers.length > 0 &&
+      identifiers.some((value) => seenIdentifiers.has(value))
+    ) {
       continue;
     }
     uniqueRecords.push(entry);
@@ -455,17 +485,29 @@ const toSessionSummaries = (
 
     const identifiers = sessionIdentifiers(entry);
     const key =
-      readString(entry, ["key", "session_key", "sessionKey", "id", "sessionId"]) ??
-      `session-${index}`;
+      readString(entry, [
+        "key",
+        "session_key",
+        "sessionKey",
+        "id",
+        "sessionId",
+      ]) ?? `session-${index}`;
     const label = readString(entry, ["label", "name", "title"]) ?? key;
-    const channel = readStringFromRecords([entry, originRecord], [
-      "channel",
-      "source",
-      "kind",
-      "chatType",
+    const channel = readStringFromRecords(
+      [entry, originRecord],
+      ["channel", "source", "kind", "chatType"],
+    );
+    const model = readString(entry, [
+      "model",
+      "model_name",
+      "provider",
+      "engine",
     ]);
-    const model = readString(entry, ["model", "model_name", "provider", "engine"]);
-    const modelProvider = readString(entry, ["modelProvider", "model_provider", "provider"]);
+    const modelProvider = readString(entry, [
+      "modelProvider",
+      "model_provider",
+      "provider",
+    ]);
     const lastSeenAt = readTimestampFromRecords(candidateRecords, [
       "updated_at",
       "updatedAt",
@@ -533,10 +575,15 @@ const toSessionSummaries = (
           : DASH;
 
     const subtitleBits = [channel, model].filter(Boolean) as string[];
-    const subtitle = subtitleBits.length > 0 ? subtitleBits.join(" · ") : "Session";
+    const subtitle =
+      subtitleBits.length > 0 ? subtitleBits.join(" · ") : "Session";
     const modelWithProvider =
-      modelProvider && model && modelProvider !== model ? `${model} · ${modelProvider}` : model;
-    const subtitleWithProvider = [channel, modelWithProvider].filter(Boolean).join(" · ");
+      modelProvider && model && modelProvider !== model
+        ? `${model} · ${modelProvider}`
+        : model;
+    const subtitleWithProvider = [channel, modelWithProvider]
+      .filter(Boolean)
+      .join(" · ");
 
     return {
       key,
@@ -558,6 +605,7 @@ function TopMetricCard({
   infoText,
   icon,
   accent,
+  href,
 }: {
   title: string;
   value: string;
@@ -565,6 +613,7 @@ function TopMetricCard({
   infoText?: string;
   icon: React.ReactNode;
   accent: "blue" | "green" | "violet" | "emerald";
+  href: string;
 }) {
   const iconTone =
     accent === "blue"
@@ -576,7 +625,10 @@ function TopMetricCard({
           : "bg-green-50 text-green-600";
 
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-4 md:p-6 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+    <Link
+      href={href}
+      className="block rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-slate-300 md:p-6"
+    >
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-1.5">
@@ -594,17 +646,17 @@ function TopMetricCard({
             ) : null}
           </div>
           <div className="mt-2 flex items-end gap-2">
-            <p className="font-heading text-4xl font-bold text-slate-900">{value}</p>
+            <p className="font-heading text-4xl font-bold text-slate-900">
+              {value}
+            </p>
             {secondary ? (
               <p className="pb-1 text-xs text-slate-500">{secondary}</p>
             ) : null}
           </div>
         </div>
-        <div className={`rounded-lg p-2 ${iconTone}`}>
-          {icon}
-        </div>
+        <div className={`rounded-lg p-2 ${iconTone}`}>{icon}</div>
       </div>
-    </section>
+    </Link>
   );
 }
 
@@ -613,14 +665,19 @@ function InfoBlock({
   badge,
   infoText,
   rows,
+  href,
 }: {
   title: string;
   badge?: { text: string; tone: "online" | "offline" | "neutral" };
   infoText?: string;
   rows: SummaryRow[];
+  href: string;
 }) {
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-4 md:p-6 shadow-sm">
+    <Link
+      href={href}
+      className="block rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-slate-300 md:p-6"
+    >
       <div className="mb-4 flex items-center justify-between gap-3">
         <div className="flex items-center gap-1.5">
           <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
@@ -650,7 +707,10 @@ function InfoBlock({
       </div>
       <div className="divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white">
         {rows.map((row) => (
-          <div key={`${row.label}-${row.value}`} className="flex items-start justify-between gap-3 px-3 py-2">
+          <div
+            key={`${row.label}-${row.value}`}
+            className="flex items-start justify-between gap-3 px-3 py-2"
+          >
             <span className="min-w-0 text-sm text-slate-500">{row.label}</span>
             <span
               className={`max-w-[65%] break-words text-right text-sm font-medium leading-5 ${
@@ -668,7 +728,7 @@ function InfoBlock({
           </div>
         ))}
       </div>
-    </section>
+    </Link>
   );
 }
 
@@ -676,7 +736,10 @@ export default function DashboardPage() {
   const router = useRouter();
   const { isSignedIn } = useAuth();
 
-  const boardsQuery = useListBoardsApiV1BoardsGet<listBoardsApiV1BoardsGetResponse, ApiError>(
+  const boardsQuery = useListBoardsApiV1BoardsGet<
+    listBoardsApiV1BoardsGetResponse,
+    ApiError
+  >(
     { limit: 200 },
     {
       query: {
@@ -698,7 +761,10 @@ export default function DashboardPage() {
     },
   });
 
-  const agentsQuery = useListAgentsApiV1AgentsGet<listAgentsApiV1AgentsGetResponse, ApiError>(
+  const agentsQuery = useListAgentsApiV1AgentsGet<
+    listAgentsApiV1AgentsGetResponse,
+    ApiError
+  >(
     { limit: 200 },
     {
       query: {
@@ -727,7 +793,10 @@ export default function DashboardPage() {
     },
   );
 
-  const activityQuery = useListActivityApiV1ActivityGet<listActivityApiV1ActivityGetResponse, ApiError>(
+  const activityQuery = useListActivityApiV1ActivityGet<
+    listActivityApiV1ActivityGetResponse,
+    ApiError
+  >(
     { limit: 200 },
     {
       query: {
@@ -741,7 +810,9 @@ export default function DashboardPage() {
   const boards = useMemo(
     () =>
       boardsQuery.data?.status === 200
-        ? [...(boardsQuery.data.data.items ?? [])].sort((a, b) => a.name.localeCompare(b.name))
+        ? [...(boardsQuery.data.data.items ?? [])].sort((a, b) =>
+            a.name.localeCompare(b.name),
+          )
         : [],
     [boardsQuery.data],
   );
@@ -749,7 +820,9 @@ export default function DashboardPage() {
   const agents = useMemo(
     () =>
       agentsQuery.data?.status === 200
-        ? [...(agentsQuery.data.data.items ?? [])].sort((a, b) => a.name.localeCompare(b.name))
+        ? [...(agentsQuery.data.data.items ?? [])].sort((a, b) =>
+            a.name.localeCompare(b.name),
+          )
         : [],
     [agentsQuery.data],
   );
@@ -757,23 +830,34 @@ export default function DashboardPage() {
   const gateways = useMemo(
     () =>
       gatewaysQuery.data?.status === 200
-        ? [...(gatewaysQuery.data.data.items ?? [])].sort((a, b) => a.name.localeCompare(b.name))
+        ? [...(gatewaysQuery.data.data.items ?? [])].sort((a, b) =>
+            a.name.localeCompare(b.name),
+          )
         : [],
     [gatewaysQuery.data],
   );
 
-  const metrics = metricsQuery.data?.status === 200 ? metricsQuery.data.data : null;
+  const metrics =
+    metricsQuery.data?.status === 200 ? metricsQuery.data.data : null;
 
   const onlineAgents = useMemo(
-    () => agents.filter((agent) => (agent.status ?? "").toLowerCase() === "online").length,
+    () =>
+      agents.filter((agent) => (agent.status ?? "").toLowerCase() === "online")
+        .length,
     [agents],
   );
   const gatewayTargets = useMemo<GatewayTarget[]>(() => {
-    const boardByGatewayId = new Map<string, { boardId: string; boardName: string }>();
+    const boardByGatewayId = new Map<
+      string,
+      { boardId: string; boardName: string }
+    >();
     for (const board of boards) {
       const gatewayId = board.gateway_id;
       if (!gatewayId || boardByGatewayId.has(gatewayId)) continue;
-      boardByGatewayId.set(gatewayId, { boardId: board.id, boardName: board.name });
+      boardByGatewayId.set(gatewayId, {
+        boardId: board.id,
+        boardName: board.name,
+      });
     }
 
     return gateways.map((gateway: GatewayRead) => {
@@ -797,7 +881,9 @@ export default function DashboardPage() {
     queryKey: [
       "dashboard",
       "gateway-statuses",
-      gatewayTargets.map((target) => `${target.gatewayId}:${target.boardId ?? "unassigned"}`),
+      gatewayTargets.map(
+        (target) => `${target.gatewayId}:${target.boardId ?? "unassigned"}`,
+      ),
     ],
     enabled: Boolean(isSignedIn && hasConfiguredGateways),
     refetchInterval: 15_000,
@@ -854,7 +940,9 @@ export default function DashboardPage() {
               mainSessionError: null,
               error: null,
               requestError:
-                error instanceof Error ? error.message : "Gateway status request failed.",
+                error instanceof Error
+                  ? error.message
+                  : "Gateway status request failed.",
             };
           }
         }),
@@ -870,7 +958,9 @@ export default function DashboardPage() {
     queryKey: [
       "dashboard",
       "gateway-runtime-overviews",
-      gatewayTargets.map((target) => `${target.gatewayId}:${target.gatewayUrl}`),
+      gatewayTargets.map(
+        (target) => `${target.gatewayId}:${target.gatewayUrl}`,
+      ),
     ],
     enabled: Boolean(isSignedIn && hasConfiguredGateways),
     refetchInterval: 15_000,
@@ -915,7 +1005,9 @@ export default function DashboardPage() {
     queryKey: [
       "dashboard",
       "gateway-crons",
-      gatewayTargets.map((target) => `${target.gatewayId}:${target.gatewayUrl}`),
+      gatewayTargets.map(
+        (target) => `${target.gatewayId}:${target.gatewayUrl}`,
+      ),
     ],
     enabled: Boolean(isSignedIn && hasConfiguredGateways),
     refetchInterval: 15_000,
@@ -937,7 +1029,9 @@ export default function DashboardPage() {
               ...target,
               crons:
                 response.status === 200
-                  ? (response.data.crons ?? []).map((cron) => toGatewayCronView(cron))
+                  ? (response.data.crons ?? []).map((cron) =>
+                      toGatewayCronView(cron),
+                    )
                   : [],
               requestError:
                 response.status === 200
@@ -957,7 +1051,10 @@ export default function DashboardPage() {
       );
     },
   });
-  const liveOperationsQuery = useQuery<MissionControlOperationsResponse, ApiError>({
+  const liveOperationsQuery = useQuery<
+    MissionControlOperationsResponse,
+    ApiError
+  >({
     queryKey: ["dashboard", "mission-control-live-operations"],
     enabled: Boolean(isSignedIn),
     refetchInterval: 15_000,
@@ -990,12 +1087,17 @@ export default function DashboardPage() {
       gatewaySnapshots.flatMap((snapshot) => {
         if (snapshot.requestError) return [];
         const sourceLabel =
-          snapshot.gatewayName || snapshot.gatewayUrl || snapshot.boardName || "Gateway";
-        return toSessionSummaries(snapshot.sessions, snapshot.mainSession).map((session) => ({
-          ...session,
-          key: `${snapshot.gatewayId}:${session.key}`,
-          subtitle: `${sourceLabel} · ${session.subtitle}`,
-        }));
+          snapshot.gatewayName ||
+          snapshot.gatewayUrl ||
+          snapshot.boardName ||
+          "Gateway";
+        return toSessionSummaries(snapshot.sessions, snapshot.mainSession).map(
+          (session) => ({
+            ...session,
+            key: `${snapshot.gatewayId}:${session.key}`,
+            subtitle: `${sourceLabel} · ${session.subtitle}`,
+          }),
+        );
       }),
     [gatewaySnapshots],
   );
@@ -1021,7 +1123,9 @@ export default function DashboardPage() {
   const recentLogs = orderedActivityEvents.slice(0, 8);
 
   const latestThroughputPoint =
-    metrics?.throughput.primary.points?.[metrics.throughput.primary.points.length - 1] ?? null;
+    metrics?.throughput.primary.points?.[
+      metrics.throughput.primary.points.length - 1
+    ] ?? null;
   const throughputTotal = (metrics?.throughput.primary.points ?? []).reduce(
     (sum, point) => sum + Number(point.value ?? 0),
     0,
@@ -1036,11 +1140,18 @@ export default function DashboardPage() {
   const reviewTasksMetric = metrics?.kpis.review_tasks ?? 0;
   const doneTasksMetric = metrics?.kpis.done_tasks ?? 0;
 
-  const tasksTotal = inboxTasksMetric + inProgressTasksMetric + reviewTasksMetric + doneTasksMetric;
-  const tasksInProgressMetric = metrics?.kpis.tasks_in_progress ?? inProgressTasksMetric;
+  const tasksTotal =
+    inboxTasksMetric +
+    inProgressTasksMetric +
+    reviewTasksMetric +
+    doneTasksMetric;
+  const tasksInProgressMetric =
+    metrics?.kpis.tasks_in_progress ?? inProgressTasksMetric;
   const errorRateMetric = Number(metrics?.kpis.error_rate_pct ?? 0);
   const reviewBacklogRatio =
-    inProgressTasksMetric > 0 ? reviewTasksMetric / inProgressTasksMetric : null;
+    inProgressTasksMetric > 0
+      ? reviewTasksMetric / inProgressTasksMetric
+      : null;
 
   const gatewayConnectedCount = gatewaySnapshots.filter(
     (snapshot) => !snapshot.requestError && snapshot.connected,
@@ -1048,11 +1159,11 @@ export default function DashboardPage() {
   const gatewayDisconnectedCount = gatewaySnapshots.filter(
     (snapshot) => !snapshot.requestError && !snapshot.connected,
   ).length;
-  const gatewayUnavailableCount = gatewaySnapshots.filter(
-    (snapshot) => Boolean(snapshot.requestError),
+  const gatewayUnavailableCount = gatewaySnapshots.filter((snapshot) =>
+    Boolean(snapshot.requestError),
   ).length;
-  const gatewayHealthErrorCount = gatewaySnapshots.filter(
-    (snapshot) => Boolean(snapshot.error || snapshot.mainSessionError),
+  const gatewayHealthErrorCount = gatewaySnapshots.filter((snapshot) =>
+    Boolean(snapshot.error || snapshot.mainSessionError),
   ).length;
   const unlinkedGatewayCount = gatewayTargets.filter(
     (target) => !target.boardId,
@@ -1066,9 +1177,12 @@ export default function DashboardPage() {
   const runtimeSummary = runtimeSnapshots.reduce(
     (summary, snapshot) => {
       const values = snapshot.overview?.summary ?? {};
-      summary.agents += values.agents_total ?? snapshot.overview?.agents.length ?? 0;
-      summary.subagents += values.subagents_total ?? snapshot.overview?.subagents.length ?? 0;
-      summary.edges += values.edges_total ?? snapshot.overview?.edges.length ?? 0;
+      summary.agents +=
+        values.agents_total ?? snapshot.overview?.agents.length ?? 0;
+      summary.subagents +=
+        values.subagents_total ?? snapshot.overview?.subagents.length ?? 0;
+      summary.edges +=
+        values.edges_total ?? snapshot.overview?.edges.length ?? 0;
       summary.working += values.working ?? 0;
       summary.idle += values.idle ?? 0;
       summary.waiting += values.waiting ?? 0;
@@ -1092,7 +1206,9 @@ export default function DashboardPage() {
           runtimeSnapshots
             .flatMap((snapshot) => [
               ...(snapshot.overview?.agents ?? []).map((agent) => agent.model),
-              ...(snapshot.overview?.subagents ?? []).map((agent) => agent.model),
+              ...(snapshot.overview?.subagents ?? []).map(
+                (agent) => agent.model,
+              ),
             ])
             .filter((model): model is string => Boolean(model)),
         ),
@@ -1103,7 +1219,9 @@ export default function DashboardPage() {
     () => cronSnapshots.flatMap((snapshot) => snapshot.crons),
     [cronSnapshots],
   );
-  const enabledCronCount = allCronRecords.filter((cron) => cron.enabled === true).length;
+  const enabledCronCount = allCronRecords.filter(
+    (cron) => cron.enabled === true,
+  ).length;
   const failingCronCount = allCronRecords.filter((cron) => {
     const status = (cron.lastRunStatus ?? "").toLowerCase();
     return status === "failed" || status === "error" || status === "timeout";
@@ -1120,14 +1238,20 @@ export default function DashboardPage() {
     [allCronRecords],
   );
   const runtimeAgentsTotal = runtimeSummary.agents + runtimeSummary.subagents;
-  const activeAgentsMetric = runtimeAgentsTotal > 0 ? runtimeAgentsTotal : onlineAgents;
+  const activeAgentsMetric =
+    runtimeAgentsTotal > 0 ? runtimeAgentsTotal : onlineAgents;
   const liveOperations = liveOperationsQuery.data ?? null;
   const liveTeams = useMemo(
     () =>
       [...(liveOperations?.teams ?? [])].sort((left, right) => {
-        const leftActive = left.task_counts.in_progress + left.task_counts.blocked;
-        const rightActive = right.task_counts.in_progress + right.task_counts.blocked;
-        return rightActive - leftActive || left.team_name.localeCompare(right.team_name);
+        const leftActive =
+          left.task_counts.in_progress + left.task_counts.blocked;
+        const rightActive =
+          right.task_counts.in_progress + right.task_counts.blocked;
+        return (
+          rightActive - leftActive ||
+          left.team_name.localeCompare(right.team_name)
+        );
       }),
     [liveOperations],
   );
@@ -1141,14 +1265,20 @@ export default function DashboardPage() {
   const liveCodexSessions = useMemo(
     () =>
       [...(liveOperations?.codex_sessions ?? [])].sort((left, right) => {
-        const leftTime = left.updated_at ?? left.recent_events[0]?.created_at ?? "";
-        const rightTime = right.updated_at ?? right.recent_events[0]?.created_at ?? "";
-        return rightTime.localeCompare(leftTime) || left.thread_id.localeCompare(right.thread_id);
+        const leftTime =
+          left.updated_at ?? left.recent_events[0]?.created_at ?? "";
+        const rightTime =
+          right.updated_at ?? right.recent_events[0]?.created_at ?? "";
+        return (
+          rightTime.localeCompare(leftTime) ||
+          left.thread_id.localeCompare(right.thread_id)
+        );
       }),
     [liveOperations],
   );
   const visibleCodexSessions = liveCodexSessions;
-  const liveCodexSessionsTotal = liveOperationsSummary.codex_sessions_total ?? liveCodexSessions.length;
+  const liveCodexSessionsTotal =
+    liveOperationsSummary.codex_sessions_total ?? liveCodexSessions.length;
   const liveCodexSessionsActive =
     liveOperationsSummary.codex_sessions_active ??
     liveCodexSessions.filter((session) => session.active).length;
@@ -1186,9 +1316,11 @@ export default function DashboardPage() {
   const gatewayStatusTone: SummaryRow["tone"] =
     gatewayStatusLabel === "All connected"
       ? "success"
-      : gatewayStatusLabel === "Checking" || gatewayStatusLabel === "Not configured"
+      : gatewayStatusLabel === "Checking" ||
+          gatewayStatusLabel === "Not configured"
         ? "default"
-        : gatewayStatusLabel === "Partially connected" || gatewayStatusLabel === "Disconnected"
+        : gatewayStatusLabel === "Partially connected" ||
+            gatewayStatusLabel === "Disconnected"
           ? "warning"
           : "danger";
 
@@ -1222,7 +1354,10 @@ export default function DashboardPage() {
       label: "Completed tasks",
       value: formatCount(throughputTotal),
     },
-    { label: "Average throughput", value: formatPerDay(throughputTotal, DASHBOARD_RANGE_DAYS) },
+    {
+      label: "Average throughput",
+      value: formatPerDay(throughputTotal, DASHBOARD_RANGE_DAYS),
+    },
     {
       label: "Error rate",
       value: formatPercent(errorRateMetric),
@@ -1231,7 +1366,10 @@ export default function DashboardPage() {
     {
       label: "Completion consistency",
       value: `${formatCount(completionDaysCount)} active days`,
-      tone: completionDaysCount >= Math.ceil(DASHBOARD_RANGE_DAYS * 0.75) ? "success" : "default",
+      tone:
+        completionDaysCount >= Math.ceil(DASHBOARD_RANGE_DAYS * 0.75)
+          ? "success"
+          : "default",
     },
     {
       label: "Review backlog ratio",
@@ -1253,7 +1391,11 @@ export default function DashboardPage() {
   ];
 
   const gatewayRows: SummaryRow[] = [
-    { label: "Gateway status", value: gatewayStatusLabel, tone: gatewayStatusTone },
+    {
+      label: "Gateway status",
+      value: gatewayStatusLabel,
+      tone: gatewayStatusTone,
+    },
     { label: "Configured gateways", value: formatCount(gateways.length) },
     {
       label: "Connected gateways",
@@ -1268,7 +1410,10 @@ export default function DashboardPage() {
     {
       label: "Gateways with issues",
       value: formatCount(gatewayHealthErrorCount + gatewayDisconnectedCount),
-      tone: gatewayHealthErrorCount + gatewayDisconnectedCount > 0 ? "warning" : "success",
+      tone:
+        gatewayHealthErrorCount + gatewayDisconnectedCount > 0
+          ? "warning"
+          : "success",
     },
   ];
   const pendingApprovalItems = metrics?.pending_approvals.items ?? [];
@@ -1373,6 +1518,7 @@ export default function DashboardPage() {
                 }
                 icon={<Bot className="h-4 w-4" />}
                 accent="blue"
+                href={dashboardDetailHref("online-agents")}
               />
               <TopMetricCard
                 title="Tasks In Progress"
@@ -1380,6 +1526,7 @@ export default function DashboardPage() {
                 secondary={`${formatCount(tasksTotal)} total`}
                 icon={<LayoutGrid className="h-4 w-4" />}
                 accent="green"
+                href={dashboardDetailHref("tasks-in-progress")}
               />
               <TopMetricCard
                 title="Error Rate"
@@ -1387,6 +1534,7 @@ export default function DashboardPage() {
                 secondary={`${formatCount(Number(latestThroughputPoint?.value ?? 0))} completed (latest)`}
                 icon={<Activity className="h-4 w-4" />}
                 accent="violet"
+                href={dashboardDetailHref("error-rate")}
               />
               <TopMetricCard
                 title="Completion Speed"
@@ -1395,6 +1543,7 @@ export default function DashboardPage() {
                 infoText={`Based on ${DASHBOARD_RANGE_LABEL}`}
                 icon={<Timer className="h-4 w-4" />}
                 accent="emerald"
+                href={dashboardDetailHref("completion-speed")}
               />
             </div>
 
@@ -1402,11 +1551,13 @@ export default function DashboardPage() {
               <InfoBlock
                 title="Workload"
                 rows={workloadRows}
+                href={dashboardDetailHref("workload")}
               />
               <InfoBlock
                 title="Throughput"
                 infoText={`All throughput values are calculated for ${DASHBOARD_RANGE_LABEL}`}
                 rows={throughputRows}
+                href={dashboardDetailHref("throughput")}
               />
               <InfoBlock
                 title="Gateway Health"
@@ -1415,6 +1566,7 @@ export default function DashboardPage() {
                   tone: gatewayBadgeTone,
                 }}
                 rows={gatewayRows}
+                href={dashboardDetailHref("gateway-health")}
               />
             </div>
 
@@ -1425,7 +1577,8 @@ export default function DashboardPage() {
                     Runtime Coverage
                   </h3>
                   <p className="text-sm text-slate-500">
-                    Live gateway data, cron health, and persisted board/task coverage.
+                    Live gateway data, cron health, and persisted board/task
+                    coverage.
                   </p>
                 </div>
                 <span className="text-xs text-slate-500">
@@ -1437,7 +1590,10 @@ export default function DashboardPage() {
                 </span>
               </div>
               <div className="grid gap-3 lg:grid-cols-4">
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <Link
+                  href={dashboardDetailHref("agents-and-teams")}
+                  className="block rounded-lg border border-slate-200 bg-slate-50 p-4 transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-white hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+                >
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Agents and teams
                   </p>
@@ -1453,8 +1609,11 @@ export default function DashboardPage() {
                     {formatCount(runtimeSummary.waiting)} waiting ·{" "}
                     {formatCount(runtimeSummary.broken)} broken
                   </p>
-                </div>
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                </Link>
+                <Link
+                  href={dashboardDetailHref("collaboration-graph")}
+                  className="block rounded-lg border border-slate-200 bg-slate-50 p-4 transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-white hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+                >
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Collaboration graph
                   </p>
@@ -1465,10 +1624,14 @@ export default function DashboardPage() {
                     agent-to-agent runtime edges
                   </p>
                   <p className="mt-2 text-xs text-slate-500">
-                    Models: {runtimeModels.length ? runtimeModels.join(", ") : DASH}
+                    Models:{" "}
+                    {runtimeModels.length ? runtimeModels.join(", ") : DASH}
                   </p>
-                </div>
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                </Link>
+                <Link
+                  href={dashboardDetailHref("cron-jobs")}
+                  className="block rounded-lg border border-slate-200 bg-slate-50 p-4 transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-white hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+                >
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Cron jobs
                   </p>
@@ -1482,8 +1645,11 @@ export default function DashboardPage() {
                   <p className="mt-2 text-xs text-slate-500">
                     Models: {cronModels.length ? cronModels.join(", ") : DASH}
                   </p>
-                </div>
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                </Link>
+                <Link
+                  href={dashboardDetailHref("boards-tasks-feeds")}
+                  className="block rounded-lg border border-slate-200 bg-slate-50 p-4 transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-white hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+                >
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Boards, tasks, feeds
                   </p>
@@ -1499,13 +1665,13 @@ export default function DashboardPage() {
                       ? "No project boards are configured; task boards and board feeds are empty."
                       : "Board task, forum, and sidecar feeds are available from each board."}
                   </p>
-                </div>
+                </Link>
               </div>
               {runtimeSnapshots.some((snapshot) => snapshot.requestError) ||
               cronSnapshots.some((snapshot) => snapshot.requestError) ? (
                 <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
-                  Some gateway runtime or cron checks failed. Open the gateway detail page
-                  for per-gateway errors.
+                  Some gateway runtime or cron checks failed. Open the gateway
+                  detail page for per-gateway errors.
                 </div>
               ) : null}
             </section>
@@ -1517,7 +1683,8 @@ export default function DashboardPage() {
                     Live Operations
                   </h3>
                   <p className="text-sm text-slate-500">
-                    Codex team sessions, task progress, worker panes, and gateway runtime agents.
+                    Codex team sessions, task progress, worker panes, and
+                    gateway runtime agents.
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -1548,7 +1715,10 @@ export default function DashboardPage() {
               </div>
 
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <Link
+                  href={dashboardDetailHref("codex-teams")}
+                  className="block rounded-lg border border-slate-200 bg-slate-50 p-4 transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-white hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+                >
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Codex teams
                   </p>
@@ -1558,8 +1728,11 @@ export default function DashboardPage() {
                   <p className="mt-1 text-sm text-slate-600">
                     {formatCount(liveTaskTotal)} tracked tasks
                   </p>
-                </div>
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                </Link>
+                <Link
+                  href={dashboardDetailHref("worker-panes")}
+                  className="block rounded-lg border border-slate-200 bg-slate-50 p-4 transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-white hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+                >
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Worker panes
                   </p>
@@ -1569,8 +1742,11 @@ export default function DashboardPage() {
                   <p className="mt-1 text-sm text-slate-600">
                     {formatCount(liveWorkersActive)} active
                   </p>
-                </div>
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                </Link>
+                <Link
+                  href={dashboardDetailHref("runtime-gateways")}
+                  className="block rounded-lg border border-slate-200 bg-slate-50 p-4 transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-white hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+                >
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Runtime gateways
                   </p>
@@ -1580,8 +1756,11 @@ export default function DashboardPage() {
                   <p className="mt-1 text-sm text-slate-600">
                     of {formatCount(liveGatewaysTotal)} responding
                   </p>
-                </div>
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                </Link>
+                <Link
+                  href={dashboardDetailHref("codex-threads")}
+                  className="block rounded-lg border border-slate-200 bg-slate-50 p-4 transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-white hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+                >
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Codex threads
                   </p>
@@ -1591,8 +1770,11 @@ export default function DashboardPage() {
                   <p className="mt-1 text-sm text-slate-600">
                     {formatCount(liveCodexSessionsActive)} active
                   </p>
-                </div>
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                </Link>
+                <Link
+                  href={dashboardDetailHref("scan-roots")}
+                  className="block rounded-lg border border-slate-200 bg-slate-50 p-4 transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-white hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+                >
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Scan roots
                   </p>
@@ -1604,7 +1786,7 @@ export default function DashboardPage() {
                       ? formatRelativeTimestamp(liveOperations.generated_at)
                       : "Awaiting first scan"}
                   </p>
-                </div>
+                </Link>
               </div>
 
               <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
@@ -1614,7 +1796,8 @@ export default function DashboardPage() {
                       Codex session monitor
                     </p>
                     <p className="text-xs text-slate-500">
-                      App-server thread attachments, recent prompts, replies, and runtime events.
+                      App-server thread attachments, recent prompts, replies,
+                      and runtime events.
                     </p>
                   </div>
                   <span className="text-xs text-slate-500">
@@ -1649,44 +1832,56 @@ export default function DashboardPage() {
                         </div>
                         <div className="mt-2 grid gap-1 text-xs text-slate-600">
                           <p className="truncate">
-                            <span className="font-medium text-slate-700">Workspace:</span>{" "}
+                            <span className="font-medium text-slate-700">
+                              Workspace:
+                            </span>{" "}
                             {session.cwd || DASH}
                           </p>
                           <p className="truncate">
-                            <span className="font-medium text-slate-700">Model:</span>{" "}
-                            {[session.model_provider, session.model].filter(Boolean).join("/") ||
+                            <span className="font-medium text-slate-700">
+                              Model:
+                            </span>{" "}
+                            {[session.model_provider, session.model]
+                              .filter(Boolean)
+                              .join("/") ||
                               session.model ||
                               DASH}
                           </p>
                           <p className="truncate">
-                            <span className="font-medium text-slate-700">Session:</span>{" "}
+                            <span className="font-medium text-slate-700">
+                              Session:
+                            </span>{" "}
                             {session.session_key || session.session_file}
                           </p>
                         </div>
                         <div className="mt-3 space-y-2">
                           {session.recent_events.length > 0 ? (
-                            session.recent_events.slice(0, 3).map((event, index) => (
-                              <div
-                                key={`${session.thread_id}:${event.type}:${event.created_at ?? index}`}
-                                className="rounded-md bg-slate-50 px-3 py-2"
-                              >
-                                <div className="mb-1 flex items-center justify-between gap-2">
-                                  <span
-                                    className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${codexEventToneClass(event.type)}`}
-                                  >
-                                    {event.type}
-                                  </span>
-                                  <span className="shrink-0 text-[11px] text-slate-500">
-                                    {event.created_at
-                                      ? formatRelativeTimestamp(event.created_at)
-                                      : DASH}
-                                  </span>
+                            session.recent_events
+                              .slice(0, 3)
+                              .map((event, index) => (
+                                <div
+                                  key={`${session.thread_id}:${event.type}:${event.created_at ?? index}`}
+                                  className="rounded-md bg-slate-50 px-3 py-2"
+                                >
+                                  <div className="mb-1 flex items-center justify-between gap-2">
+                                    <span
+                                      className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${codexEventToneClass(event.type)}`}
+                                    >
+                                      {event.type}
+                                    </span>
+                                    <span className="shrink-0 text-[11px] text-slate-500">
+                                      {event.created_at
+                                        ? formatRelativeTimestamp(
+                                            event.created_at,
+                                          )
+                                        : DASH}
+                                    </span>
+                                  </div>
+                                  <p className="line-clamp-2 text-xs text-slate-700">
+                                    {event.summary}
+                                  </p>
                                 </div>
-                                <p className="line-clamp-2 text-xs text-slate-700">
-                                  {event.summary}
-                                </p>
-                              </div>
-                            ))
+                              ))
                           ) : (
                             <p className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-500">
                               No recent Codex events found for this attachment.
@@ -1698,7 +1893,8 @@ export default function DashboardPage() {
                   </div>
                 ) : (
                   <div className="rounded-md bg-white px-3 py-2 text-sm text-slate-500">
-                    No Codex app-server session attachments found in configured gateway workspaces.
+                    No Codex app-server session attachments found in configured
+                    gateway workspaces.
                   </div>
                 )}
               </div>
@@ -1710,7 +1906,8 @@ export default function DashboardPage() {
                   </div>
                 ) : liveOperationsQuery.error ? (
                   <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
-                    Live operations are temporarily unavailable: {liveOperationsQuery.error.message}
+                    Live operations are temporarily unavailable:{" "}
+                    {liveOperationsQuery.error.message}
                   </div>
                 ) : visibleLiveTeams.length > 0 ? (
                   visibleLiveTeams.map((team) => {
@@ -1727,7 +1924,9 @@ export default function DashboardPage() {
                               {team.team_name}
                             </p>
                             <p className="mt-0.5 line-clamp-2 text-xs text-slate-500">
-                              {team.task || team.project_root || team.state_root}
+                              {team.task ||
+                                team.project_root ||
+                                team.state_root}
                             </p>
                           </div>
                           <div className="grid shrink-0 grid-cols-3 gap-2 text-right text-xs">
@@ -1745,7 +1944,10 @@ export default function DashboardPage() {
                             </div>
                             <div>
                               <p className="font-semibold text-rose-700">
-                                {formatCount(team.task_counts.failed + team.task_counts.blocked)}
+                                {formatCount(
+                                  team.task_counts.failed +
+                                    team.task_counts.blocked,
+                                )}
                               </p>
                               <p className="text-slate-500">blocked</p>
                             </div>
@@ -1778,19 +1980,25 @@ export default function DashboardPage() {
                                   className={`inline-flex max-w-full items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium ${statusToneClass(worker.state)}`}
                                   title={worker.reason ?? undefined}
                                 >
-                                  <span className="truncate">{worker.name}</span>
-                                  <span className="text-slate-500">{worker.pane_id ?? "no pane"}</span>
+                                  <span className="truncate">
+                                    {worker.name}
+                                  </span>
+                                  <span className="text-slate-500">
+                                    {worker.pane_id ?? "no pane"}
+                                  </span>
                                 </span>
                               ))}
                             </div>
                             <div className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-600">
                               {firstMessage ? (
                                 <p className="line-clamp-2">
-                                  {firstMessage.from_worker ?? "worker"}: {firstMessage.body}
+                                  {firstMessage.from_worker ?? "worker"}:{" "}
+                                  {firstMessage.body}
                                 </p>
                               ) : firstEvent ? (
                                 <p className="line-clamp-2">
-                                  {firstEvent.worker ?? "event"}: {firstEvent.type}
+                                  {firstEvent.worker ?? "event"}:{" "}
+                                  {firstEvent.type}
                                 </p>
                               ) : (
                                 <p>No recent mailbox or team events.</p>
@@ -1803,7 +2011,8 @@ export default function DashboardPage() {
                   })
                 ) : (
                   <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-500">
-                    No OMX team sessions found in the configured gateway workspaces yet.
+                    No OMX team sessions found in the configured gateway
+                    workspaces yet.
                   </div>
                 )}
               </div>
@@ -1811,7 +2020,9 @@ export default function DashboardPage() {
 
             <section className="mt-4 rounded-xl border border-slate-200 bg-white p-4 md:p-6 shadow-sm">
               <div className="mb-3 flex items-center justify-between gap-3">
-                <h3 className="text-lg font-semibold text-slate-900">Pending Approvals</h3>
+                <h3 className="text-lg font-semibold text-slate-900">
+                  Pending Approvals
+                </h3>
                 <Link
                   href="/approvals"
                   className="inline-flex items-center gap-1 text-xs text-slate-500 transition hover:text-slate-700"
@@ -1854,8 +2065,8 @@ export default function DashboardPage() {
                   </div>
                   {pendingApprovalsTotal > pendingApprovalItems.length ? (
                     <p className="text-xs text-slate-500">
-                      Showing latest {formatCount(pendingApprovalItems.length)} of{" "}
-                      {formatCount(pendingApprovalsTotal)} pending approvals.
+                      Showing latest {formatCount(pendingApprovalItems.length)}{" "}
+                      of {formatCount(pendingApprovalsTotal)} pending approvals.
                     </p>
                   ) : null}
                 </div>
@@ -1869,8 +2080,12 @@ export default function DashboardPage() {
             <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
               <section className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white p-4 md:p-6 shadow-sm">
                 <div className="mb-3 flex items-center justify-between gap-3">
-                  <h3 className="text-lg font-semibold text-slate-900">Sessions</h3>
-                  <span className="text-xs text-slate-500">{formatCount(activeSessions)}</span>
+                  <h3 className="text-lg font-semibold text-slate-900">
+                    Sessions
+                  </h3>
+                  <span className="text-xs text-slate-500">
+                    {formatCount(activeSessions)}
+                  </span>
                 </div>
                 <div className="max-h-[310px] space-y-2 overflow-x-hidden overflow-y-auto pr-1">
                   {!hasConfiguredGateways ? (
@@ -1886,15 +2101,16 @@ export default function DashboardPage() {
                       {gatewayUnavailableCount > 0 ? (
                         <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
                           {formatCount(gatewayUnavailableCount)} gateway
-                          {gatewayUnavailableCount === 1 ? "" : "s"} unavailable; showing sessions
-                          from reachable gateways.
+                          {gatewayUnavailableCount === 1 ? "" : "s"}{" "}
+                          unavailable; showing sessions from reachable gateways.
                         </div>
                       ) : null}
                       {unlinkedGatewayCount > 0 ? (
                         <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
                           {formatCount(unlinkedGatewayCount)} configured gateway
-                          {unlinkedGatewayCount === 1 ? " is" : "s are"} not linked to a board yet.
-                          Session visibility may be limited until a board is assigned.
+                          {unlinkedGatewayCount === 1 ? " is" : "s are"} not
+                          linked to a board yet. Session visibility may be
+                          limited until a board is assigned.
                         </div>
                       ) : null}
                       {sessionSummaries.map((session) => (
@@ -1907,16 +2123,22 @@ export default function DashboardPage() {
                               <p className="truncate text-sm font-medium text-slate-900">
                                 <span
                                   className={`mr-2 inline-block h-2 w-2 rounded-full ${
-                                    session.isMain ? "bg-emerald-500" : "bg-slate-400"
+                                    session.isMain
+                                      ? "bg-emerald-500"
+                                      : "bg-slate-400"
                                   }`}
                                 />
                                 {session.title}
                               </p>
-                              <p className="mt-0.5 truncate text-xs text-slate-500">{session.subtitle}</p>
+                              <p className="mt-0.5 truncate text-xs text-slate-500">
+                                {session.subtitle}
+                              </p>
                             </div>
                             <div className="min-w-0 max-w-[45%] text-right">
                               <p className="truncate text-xs font-medium text-slate-700">
-                                {session.usage === DASH ? "Usage unavailable" : session.usage}
+                                {session.usage === DASH
+                                  ? "Usage unavailable"
+                                  : session.usage}
                               </p>
                               <p className="text-[11px] text-slate-500">
                                 {session.lastSeenAt
@@ -1933,8 +2155,9 @@ export default function DashboardPage() {
                       {unlinkedGatewayCount > 0 ? (
                         <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
                           {formatCount(unlinkedGatewayCount)} configured gateway
-                          {unlinkedGatewayCount === 1 ? " is" : "s are"} not linked to a board yet.
-                          Session visibility may be limited until a board is assigned.
+                          {unlinkedGatewayCount === 1 ? " is" : "s are"} not
+                          linked to a board yet. Session visibility may be
+                          limited until a board is assigned.
                         </div>
                       ) : null}
                       <div className="rounded-lg border border-rose-300 bg-rose-50 p-3 text-sm text-rose-700">
@@ -1946,8 +2169,9 @@ export default function DashboardPage() {
                       {unlinkedGatewayCount > 0 ? (
                         <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
                           {formatCount(unlinkedGatewayCount)} configured gateway
-                          {unlinkedGatewayCount === 1 ? " is" : "s are"} not linked to a board yet.
-                          Session visibility may be limited until a board is assigned.
+                          {unlinkedGatewayCount === 1 ? " is" : "s are"} not
+                          linked to a board yet. Session visibility may be
+                          limited until a board is assigned.
                         </div>
                       ) : null}
                       <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-500">
@@ -1960,7 +2184,9 @@ export default function DashboardPage() {
 
               <section className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white p-4 md:p-6 shadow-sm">
                 <div className="mb-3 flex items-center justify-between gap-3">
-                  <h3 className="text-lg font-semibold text-slate-900">Recent Activity</h3>
+                  <h3 className="text-lg font-semibold text-slate-900">
+                    Recent Activity
+                  </h3>
                   <Link
                     href={activityFeedHref}
                     className="inline-flex items-center gap-1 text-xs text-slate-500 transition hover:text-slate-700"
@@ -1978,7 +2204,7 @@ export default function DashboardPage() {
                           key={event.id}
                           role="link"
                           tabIndex={0}
-                        aria-label={`Open related context for ${event.event_type} activity`}
+                          aria-label={`Open related context for ${event.event_type} activity`}
                           onClick={(interactionEvent) =>
                             handleLogRowClick(interactionEvent, eventHref)
                           }
@@ -1991,7 +2217,9 @@ export default function DashboardPage() {
                             <div className="min-w-0 flex-1 overflow-hidden">
                               <div className="break-words text-sm font-medium text-slate-900 [&_ol]:mb-0 [&_p]:mb-0 [&_pre]:my-1 [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_ul]:mb-0">
                                 <Markdown
-                                  content={event.message?.trim() || event.event_type}
+                                  content={
+                                    event.message?.trim() || event.event_type
+                                  }
                                   variant="comment"
                                 />
                               </div>
@@ -2011,7 +2239,9 @@ export default function DashboardPage() {
                     <div className="flex h-[240px] flex-col items-center justify-center rounded-lg border border-slate-200 bg-white text-sm text-slate-500">
                       <Shield className="mb-2 h-5 w-5 text-slate-400" />
                       No activity yet
-                      <p className="mt-1 text-xs text-slate-500">Activity appears here when events are emitted.</p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Activity appears here when events are emitted.
+                      </p>
                     </div>
                   )}
                 </div>
